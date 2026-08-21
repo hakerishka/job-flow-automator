@@ -1,0 +1,44 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments & Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Output datasets & Scraped CSV files
+*.csv
+!sample_*.csv
+
+# Personal spreadsheets & historical review files
+*.xlsx
+*.xls
+reviewed.xlsx
+history/
+archive/
+
+# Personal resumes and private PDFs
+CV.pdf
+*.pdf
+
+# Local backups and temporary folders
+*копия*
+*backup*
+*draft*
+
+# IDE & OS configuration
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Temp files & logs
+*.log
+scratch/
