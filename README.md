@@ -1,135 +1,139 @@
-# 🎯 Smart Job Aggregator & Review Pipeline
+# 🎯 Job-Flow Automator
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B.svg)](https://streamlit.io/)
+[![Typst](https://img.shields.io/badge/PDF%20Engine-Typst-239DAD.svg)](https://typst.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Zero API Cost](https://img.shields.io/badge/API%20Cost-$0%20Free-brightgreen.svg)]()
+[![Zero API Cost](https://img.shields.io/badge/Scraper%20Cost-$0%20Free-brightgreen.svg)]()
 
-A **zero-API-cost**, end-to-end job aggregation and smart filtering pipeline. It collects job postings across major job boards and top VC portfolios, scrapes complete descriptions, filters out unwanted language constraints via regex, scores candidate relevance, and **cumulatively tracks previously reviewed/applied vacancies** via Excel and Google Sheets.
-
-> **Credit & Inspiration:** This project extends and builds upon the core engine of [JobSpy](https://github.com/speedyapply/JobSpy) by adding direct VC board adapters (AshbyHQ, Greenhouse), deep description enrichment, regex-based language requirement filters, and cumulative historical review tracking.
+An **All-in-One Career & Job Search Automation Suite**:
+1. **Multi-Source Job Aggregator:** Scrapes LinkedIn, Indeed, VC portfolios (AshbyHQ, Greenhouse), and niche tech boards with zero scraping API cost.
+2. **Smart Language & Quality Filter:** Drops jobs requiring local language fluency (German, Spanish, French) via regex, scores relevance (`0-100%`), and extracts hiring manager emails.
+3. **Cumulative Application Tracker:** Seamlessly tracks reviewed/rejected/applied vacancies across Google Sheets and Excel files so you never review the same posting twice.
+4. **AI-Powered ATS Resume Tailor & Typst Compiler:** Analyzes target job requirements via Google Gemini, conducts an interactive 2-phase alignment, and compiles a pixel-perfect, 1-page ATS-compliant PDF in seconds.
 
 ---
 
-## ✨ Features
+## 🔄 End-to-End Workflow
 
-- 🌐 **Multi-Source Aggregation:**
-  - Scrapes **LinkedIn** & **Indeed** via `python-jobspy`.
-  - Direct API connector for **AshbyHQ** (Earlybird VC, Atlantic Labs, Point Nine, HV Capital, Planet A).
-  - Direct API connector for **Greenhouse** (Cherry Ventures Portfolio).
-  - Direct API connector for **Arbeitnow** (Tech & English roles in EU).
-  - RSS parser for **Berlin Startup Jobs**.
-- 🔄 **Deep LinkedIn Enrichment:**
-  - Automatically fetches the full *"About the job"* description for truncated LinkedIn preview listings, complete with a `tqdm` progress bar.
-- 🧹 **Regex Language Filter:**
-  - Drops jobs requiring local language fluency (e.g., German, Spanish, French) hidden in description text (e.g., *"C1 Niveau"*, *"Muttersprache"*, *"verhandlungssicher"*).
-- 🎯 **Profile Match Scoring:**
-  - Computes a `0-100%` relevance score based on your custom profile keywords, sorting the top matches first.
-- 📧 **Direct Contact Email Extraction:**
-  - Extracts recruiter and hiring manager emails from job descriptions for direct outreach.
-- 🎨 **Cumulative Historical Review Tracker (`filter_reviewed.py`):**
-  - Scans **all** historical `.xlsx` spreadsheets in your project.
-  - Detects processed jobs by **cell background color** (Google Sheets & Excel) and **status keywords** (*Applied*, *Rejected*, *Interview*, etc.).
-  - Deduplicates by both **clean URLs** and normalized **Title + Company** pairs to ensure you never review the same vacancy twice.
+```mermaid
+graph TD
+    A[1. Multi-Source Scraper<br/>LinkedIn · Indeed · Ashby · Greenhouse] --> B[jobs_clean_*.csv]
+    B --> C[2. Streamlit Dashboard / Google Sheets]
+    C -->|1-Click Link Check & Review 🟡/🔵| D[reviewed.xlsx Tracker]
+    C -->|⚡ 1-Click 'Tailor Resume'| E[3. AI ATS Tailor Engine<br/>Gemini Gap Analysis & Questions]
+    E --> F[4. Typst Compiler<br/>Pixel-Perfect 1-Page PDF]
+```
+
+---
+
+## ✨ Key Features
+
+### 🌐 1. Multi-Source Job Aggregation
+- **Job Boards:** Scrapes LinkedIn & Indeed via `python-jobspy`.
+- **VC Portfolios:** Direct official API connectors for **AshbyHQ** (Earlybird, Atlantic Labs, Point Nine, HV Capital, Planet A) and **Greenhouse** (Cherry Ventures).
+- **Niche Boards:** **Arbeitnow API** & **Berlin Startup Jobs RSS**.
+- **Deep LinkedIn Scraping:** Automatically fetches full *"About the job"* descriptions for preview cards.
+
+### 🧹 2. Smart Regex & Language Filtering
+- Automatically catches and excludes hidden local language requirements (*"fluent German"*, *"C1 Niveau"*, *"Muttersprache"*, *"español imprescindible"*).
+- Pre-configured presets in `config.py` for **German, Spanish, French**, or easily extensible to any language.
+
+### 📋 3. Interactive Dashboard & Application Tracker
+- **1-Click Job Links:** Open postings in new browser tabs instantly.
+- **Review Buttons:** Mark postings as 🟡 *Rejected* or 🔵 *Applied* with automatic persistence to `reviewed.xlsx`.
+- **Cumulative Deduplication:** Scans all historical spreadsheets so old vacancies are never shown again.
+
+### ⚡ 4. AI ATS Resume Tailor & Typst Compiler
+- **Phase 1 (Gap Analysis):** Gemini analyzes your `Master_CV.md` against the Job Description, calculates ATS Match %, and asks up to 3 strategic clarification questions.
+- **Phase 2 (Typst Variable Generation):** Generates clean, sanitized Typst variables within a strict 1-page document budget.
+- **Instant Compilation:** Compiles to PDF via **Typst** with high-density layout, zero margin waste, and strict ASCII encoding.
 
 ---
 
 ## 📁 Project Structure
 
 ```text
-├── config.py             # ⚙️ Search parameters, target categories, regex language rules, skill keywords
-├── main.py               # 🚀 Main orchestrator (Scrapes, Enriches, Filters, Scores, Exports CSV)
-├── custom_boards.py      # 🔌 Fast API connectors for VC portfolios (Ashby, Greenhouse, Arbeitnow, BSJ)
-├── filter_reviewed.py    # 🎨 Cumulative historical filter for marked/applied Excel files
-├── requirements.txt      # 📦 Python dependencies
-├── .gitignore            # 🛡️ Prevents accidental upload of personal CVs, CSVs, and XLSX files
-└── README.md             # 📖 Documentation
+job-flow-automator/
+│
+├── Run_JobFlow.bat              # 🚀 1-Click Windows startup launcher
+├── app.py                       # 🌐 Unified Streamlit Web Dashboard (Feed + Tailor + Scraper)
+│
+├── main.py                      # 🚀 Standalone Scraper Orchestrator CLI
+├── config.py                    # ⚙️ Search categories, regex rules, candidate keywords, location
+├── custom_boards.py             # 🔌 Direct API connectors for Ashby, Greenhouse, Arbeitnow
+├── filter_reviewed.py           # 🎨 Cumulative historical review filter CLI
+│
+├── templates/                   # 🛡️ Anonymized public templates for new users
+│   ├── master_cv.template.md    # 📄 Master CV & Experience Bank skeleton (Sections 1-5)
+│   ├── main.template.typ        # 📐 Canonical Typst resume layout skeleton
+│   └── prompt.template.md       # 🧠 2-Phase ATS tailoring system prompt & rules
+│
+├── requirements.txt             # 📦 Python dependencies
+├── .gitignore                   # 🔒 Protects private CVs, PDFs, XLSX, and CSVs
+└── README.md                    # 📖 Documentation
 ```
 
 ---
 
 ## ⚡ Quick Start
 
-### 1. Clone & Install Dependencies
+### 1. Clone the Repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/job-flow-automator.git
+git clone https://github.com/hakerishka/job-flow-automator.git
 cd job-flow-automator
+```
 
+### 2. Install Dependencies & Typst
+```bash
 pip install -r requirements.txt
 ```
+> **Note on Typst:** Install the free, ultra-fast [Typst CLI](https://typst.app/):
+> - **Windows:** `winget install --id Typst.Typst`
+> - **macOS:** `brew install typst`
+> - **Linux:** `cargo install typst-cli` or download binary from [Typst Releases](https://github.com/typst/typst/releases).
 
-### 2. Run the Aggregator Pipeline
-```bash
-python main.py
-```
-This generates a timestamped CSV in your project folder:
-`jobs_clean_YYYY-MM-DD_HH-MM.csv`
+### 3. Set Up Your Resume Files
+Copy the templates and customize them with your experience:
+1. `templates/master_cv.template.md` ➔ Save as **`Master_CV.md`** (fill in your experience bank and keywords).
+2. `templates/main.template.typ` ➔ Save as **`main.typ`** (customize header contacts and static sections).
 
----
-
-## 🔄 Review & Application Workflow (Google Sheets / Excel)
-
-```mermaid
-graph LR
-    A[python main.py] --> B[jobs_clean_*.csv]
-    B --> C[Import into Google Sheets]
-    C --> D[Review & Highlight Rows]
-    D --> E[Download as reviewed.xlsx]
-    E --> F[python filter_reviewed.py]
-    F --> G[jobs_clean_*_FILTERED.csv<br/>100% Brand-New Unseen Jobs]
-```
-
-1. **Import:** Open [Google Sheets](https://sheets.google.com) or Excel and import the latest `jobs_clean_*.csv`.
-2. **Review & Mark:**
-   - Highlight reviewed rows with **any background fill color** (e.g. Yellow for rejected, Blue for applied).
-   - Or write status keywords in a column (*Applied*, *Rejected*, *Interview*, *Skip*).
-3. **Export:** Download your sheet as **`.xlsx`** (`File ➔ Download ➔ Microsoft Excel (.xlsx)`).
-4. **Filter:** Place the `.xlsx` file (e.g., `reviewed.xlsx`) in the project directory and run:
-   ```bash
-   python filter_reviewed.py
-   ```
-5. **Result:** The script scans **all** previous `.xlsx` files and outputs `jobs_clean_YYYY-MM-DD_HH-MM_FILTERED.csv`, containing **only brand-new, unseen vacancies**.
+### 4. Launch Application
+- **Windows (1-Click):** Double-click `Run_JobFlow.bat`.
+- **Command Line:**
+  ```bash
+  streamlit run app.py
+  ```
 
 ---
 
-## 🌍 Adapting for Other Cities, Roles & Languages
+## 🌍 Adapting for Other Cities & Languages
 
-All settings are organized in [`config.py`](config.py):
+All settings are configured in [`config.py`](config.py):
 
-### 1. Change Location
 ```python
+# Location settings
 LOCATION = "Madrid, Spain"
 COUNTRY_INDEED = "spain"
-```
 
-### 2. Change Language Exclusion Rules
-Switch language filter presets in 1 line:
-```python
-# To filter out Spanish requirements (keep strictly English jobs in Spain):
+# Active language exclusion filter (German, Spanish, French, or empty)
 ACTIVE_LANGUAGE_PATTERNS = SPANISH_REGEX_PATTERNS
 
-# Or disable language exclusion:
-ACTIVE_LANGUAGE_PATTERNS = []
-```
-
-### 3. Customize Search Categories & Exclusion Keywords
-```python
+# Target search categories
 SEARCH_CATEGORIES = {
-    "Data & Analytics": ["Data Analyst", "Analytics Engineer", "BI Specialist"],
-    "Product Management": ["Product Manager", "Associate PM", "Product Operations"]
+    "Operations & Automation": ["Operations Specialist", "AI Automation Lead"],
+    "Product & Solutions": ["Product Operations", "Solutions Architect"]
 }
-
-EXCLUDE_TITLE_KEYWORDS = ["senior", "lead", "director", "intern"]
 ```
 
 ---
 
-## ⚠️ Notes & Disclaimer
-
-- Web scraping depends on third-party site structures. If LinkedIn or Indeed layout changes, update the underlying dependency: `pip install --upgrade python-jobspy`.
-- Direct VC board connectors (AshbyHQ, Greenhouse, Arbeitnow) use stable official JSON/GraphQL endpoints.
-- Residential proxies are recommended if scraping Google Jobs directly.
+## 🤝 Credits & Attribution
+- Core scraping engine powered by [JobSpy](https://github.com/speedyapply/JobSpy).
+- Fast modern typesetting powered by [Typst](https://typst.app/).
+- LLM reasoning powered by [Google Gemini](https://ai.google.dev/).
 
 ---
 
 ## 📄 License
-This project is open-source under the [MIT License](LICENSE).
+Open-source under the [MIT License](LICENSE).

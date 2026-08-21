@@ -22,9 +22,15 @@ reviewed.xlsx
 history/
 archive/
 
-# Personal resumes and private PDFs
+# Personal resumes and private active documents
+Master_CV.md
+master_cv.md
+main.typ
+tailored.typ
+prompt.md
 CV.pdf
 *.pdf
+output/
 
 # Local backups and temporary folders
 *копия*
