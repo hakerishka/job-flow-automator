@@ -25,6 +25,7 @@ Job-Flow Automator is an end-to-end Python & Typst career automation tool compri
 | Path | Purpose |
 | :--- | :--- |
 | [`app.py`](file:///c:/Users/haker/Downloads/JobSpy_fork/app.py) | Main Streamlit Web Hub (Job Feed, Review Tracker, ATS Tailor, Scraper Trigger). |
+| [`DOCUMENTATION.md`](file:///c:/Users/haker/Downloads/JobSpy_fork/DOCUMENTATION.md) | Exhaustive technical & architectural documentation, component deep-dives, and schemas. |
 | [`main.py`](file:///c:/Users/haker/Downloads/JobSpy_fork/main.py) | Standalone CLI scraper orchestrator (Scrapes -> Enriches -> Filters -> Scores -> Exports CSV). |
 | [`config.py`](file:///c:/Users/haker/Downloads/JobSpy_fork/config.py) | Search parameters, locations, target categories, regex language rules, skill profile keywords. |
 | [`custom_boards.py`](file:///c:/Users/haker/Downloads/JobSpy_fork/custom_boards.py) | Direct API connectors for AshbyHQ GraphQL, Greenhouse, Arbeitnow, and BSJ RSS. |
