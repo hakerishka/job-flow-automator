@@ -426,6 +426,24 @@ with tab_tailor:
             if st.button("🚀 Сгенерировать и скомпилировать 1-Page PDF", type="primary"):
                 with st.spinner("Генерация Typst переменных и компиляция PDF..."):
                     try:
+                        summary_placeholder = (
+                            "ZUSAMMENFASSUNG_PROFIL (maximal 3-4 Zeilen, hohe Dichte relevanter deutscher ATS-Schlüsselwörter, nur ASCII-Bindestriche)."
+                            if selected_lang == "Deutsch"
+                            else "SUMMARY_PARAGRAPH (3-4 lines maximum, high keyword density, standard ASCII hyphens only)."
+                        )
+
+                        skills_header = (
+                            "- *Kernkompetenzen & Systeme:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Plattformen:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Methoden & Standards:* Method 1, Method 2, Method 3"
+                            if selected_lang == "Deutsch"
+                            else "- *Core Technical & Systems:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Platforms:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Operational Methodologies:* Method 1, Method 2, Method 3"
+                        )
+
+                        exp_example = (
+                            "*Positionsbezeichnung 1* — _Unternehmen 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[01/2023 – Heute · Berlin / Remote]\n  - Stichpunkt 1 (Aktionsverb + Kontext + Messbares Ergebnis)\n  - Stichpunkt 2\n  - Stichpunkt 3\n\n  #v(0.25em)\n  *Positionsbezeichnung 2* — _Unternehmen 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[09/2017 – 01/2023 · Standort]\n  - Stichpunkt 1\n  - Stichpunkt 2\n  - Stichpunkt 3"
+                            if selected_lang == "Deutsch"
+                            else "*Role Title 1* — _Company 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Jan 2023 – Present · Berlin / Remote]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3\n\n  #v(0.25em)\n  *Role Title 2* — _Company 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Sep 2017 – Jan 2023 · Location]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3"
+                        )
+
                         phase_2_prompt = f"""
                         User Answers:
                         {user_answers if user_answers.strip() else "Proceed with standard optimal mappings based on Master CV."}
@@ -437,26 +455,15 @@ with tab_tailor:
                         #let target-role = "{st.session_state.target_role if st.session_state.target_role else 'EXACT_JOB_TITLE_FROM_JD'}"
 
                         #let summary = [
-                          SUMMARY_PARAGRAPH (3-4 lines maximum, high keyword density, standard ASCII hyphens only).
+                          {summary_placeholder}
                         ]
 
                         #let skills = [
-                          - *{'Kernkompetenzen & Systeme:' if selected_lang == 'Deutsch' else 'Core Technical & Systems:'}* Keyword 1, Keyword 2, Keyword 3, Keyword 4
-                          - *{'Tools & Plattformen:' if selected_lang == 'Deutsch' else 'Tools & Platforms:'}* Tool 1, Tool 2, Tool 3, Tool 4
-                          - *{'Methoden & Standards:' if selected_lang == 'Deutsch' else 'Operational Methodologies:'}* Method 1, Method 2, Method 3
+                          {skills_header}
                         ]
 
                         #let experience = [
-                          *Role Title 1* — _Company 1_ #h(1fr) #text(fill: rgb("#444444"), size: 8.5pt)[Date Range · Location]
-                          - Bullet point 1
-                          - Bullet point 2
-                          - Bullet point 3
-
-                          #v(0.25em)
-                          *Role Title 2* — _Company 2_ #h(1fr) #text(fill: rgb("#444444"), size: 8.5pt)[Date Range · Location]
-                          - Bullet point 1
-                          - Bullet point 2
-                          - Bullet point 3
+                          {exp_example}
                         ]
                         """
                         response = send_message_with_retry(st.session_state.chat, phase_2_prompt)
