@@ -111,10 +111,11 @@ flowchart TD
   - **Tab 3:** In-browser scraper execution with live terminal log streaming.
   - **Tab 4:** Documentation and template status dashboard.
 
-### 3.5 2-Phase Gemini ATS Tailoring Engine
+### 3.5 2-Phase Gemini ATS Tailoring Engine (Bilingual: EN / DE)
 * **`prompt.md` / `app.py`:**
+  - **Bilingual Capabilities:** Supports tailoring resumes in both **English** (`main.typ`, `Master_CV.md`) and **German** (`main_de.typ`, `Master_CV_DE.md`) with one-click toggles.
   - **Phase 1 (Russian):** Gap analysis comparing Master CV against the target Job Description + up to 3 strategic clarification questions (software gaps, soft skill framing, corporate vs. startup tone).
-  - **Phase 2 (English Typst):** Generates 4 variables for `tailored.typ`:
+  - **Phase 2 (English or German Typst):** Generates 4 variables for `tailored.typ`:
     - `#let target-role = "..."`
     - `#let summary = [...]`
     - `#let skills = [...]`
@@ -122,9 +123,9 @@ flowchart TD
   - **Sanitization Pipeline:** Converts non-breaking unicode hyphens (`\u2011`, `\u2013`) to ASCII hyphens (`-`), replaces vertical pipes with middle dots (` · `), and strips markdown wrappers.
 
 ### 3.6 Typst PDF Typesetting Engine
-* **`main.typ`:** Static skeleton with A4 geometry, margin budget (`x: 1.2cm, top: 0.85cm, bottom: 0.85cm`), Liberation Sans typography, header contacts, education, and static projects.
-* **`tailored.typ`:** Dynamically overwritten by the AI on each run.
-* **`typst compile main.typ output/CV_...pdf`:** Compiles a 1-page PDF in under 150 milliseconds.
+* **`main.typ` & `main_de.typ`:** Canonical layout skeletons for English and German with A4 geometry, margin budget (`x: 1.2cm, top: 0.85cm, bottom: 0.85cm`), Liberation Sans typography, localized header contacts, education, and static projects.
+* **`tailored.typ`:** Dynamically overwritten by the AI on each run with target language variables.
+* **`typst compile main.typ output/CV_...pdf`:** Compiles pixel-perfect 1-page PDFs in under 150 milliseconds.
 
 ---
 

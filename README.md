@@ -44,8 +44,9 @@ graph TD
 - **Review Buttons:** Mark postings as 🟡 *Rejected* or 🔵 *Applied* with automatic persistence to `reviewed.xlsx`.
 - **Cumulative Deduplication:** Scans all historical spreadsheets so old vacancies are never shown again.
 
-### ⚡ 4. AI ATS Resume Tailor & Typst Compiler
-- **Phase 1 (Gap Analysis):** Gemini analyzes your `Master_CV.md` against the Job Description, calculates ATS Match %, and asks up to 3 strategic clarification questions.
+### ⚡ 4. AI ATS Resume Tailor & Typst Compiler (Bilingual EN / DE)
+- **Bilingual Generation:** 1-click tailored resume generation in **English** (`main.typ`) or **German** (`main_de.typ`).
+- **Phase 1 (Gap Analysis):** Gemini analyzes your Master CV against the Job Description, calculates ATS Match %, and asks up to 3 strategic clarification questions in Russian.
 - **Phase 2 (Typst Variable Generation):** Generates clean, sanitized Typst variables within a strict 1-page document budget.
 - **Instant Compilation:** Compiles to PDF via **Typst** with high-density layout, zero margin waste, and strict ASCII encoding.
 
@@ -65,8 +66,10 @@ job-flow-automator/
 ├── filter_reviewed.py           # 🎨 Cumulative historical review filter CLI
 │
 ├── templates/                   # 🛡️ Anonymized public templates for new users
-│   ├── master_cv.template.md    # 📄 Master CV & Experience Bank skeleton (Sections 1-5)
-│   ├── main.template.typ        # 📐 Canonical Typst resume layout skeleton
+│   ├── master_cv.template.md    # 📄 English Master CV skeleton
+│   ├── master_cv_de.template.md # 📄 German Master CV skeleton
+│   ├── main.template.typ        # 📐 Canonical English Typst layout
+│   ├── main_de.template.typ     # 📐 Canonical German Typst layout
 │   └── prompt.template.md       # 🧠 2-Phase ATS tailoring system prompt & rules
 │
 ├── requirements.txt             # 📦 Python dependencies

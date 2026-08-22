@@ -26,17 +26,24 @@ BASE_DIR = Path(__file__).parent.resolve()
 OUTPUT_DIR = BASE_DIR / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-MASTER_CV_PATH = BASE_DIR / "Master_CV.md"
-MAIN_TYP_PATH = BASE_DIR / "main.typ"
+# Path mapping for EN and DE assets
+MASTER_CV_EN = BASE_DIR / "Master_CV.md"
+MASTER_CV_DE = BASE_DIR / "Master_CV_DE.md"
+MAIN_TYP_EN = BASE_DIR / "main.typ"
+MAIN_TYP_DE = BASE_DIR / "main_de.typ"
 TAILORED_TYP_PATH = BASE_DIR / "tailored.typ"
 REVIEWED_XLSX_PATH = BASE_DIR / "reviewed.xlsx"
 
-# Fallback to templates if user hasn't created local files yet
-if not MASTER_CV_PATH.exists() and (BASE_DIR / "templates" / "master_cv.template.md").exists():
-    MASTER_CV_PATH = BASE_DIR / "templates" / "master_cv.template.md"
+# Fallback to templates if local active files don't exist yet
+if not MASTER_CV_EN.exists() and (BASE_DIR / "templates" / "master_cv.template.md").exists():
+    MASTER_CV_EN = BASE_DIR / "templates" / "master_cv.template.md"
+if not MASTER_CV_DE.exists() and (BASE_DIR / "templates" / "master_cv_de.template.md").exists():
+    MASTER_CV_DE = BASE_DIR / "templates" / "master_cv_de.template.md"
 
-if not MAIN_TYP_PATH.exists() and (BASE_DIR / "templates" / "main.template.typ").exists():
-    MAIN_TYP_PATH = BASE_DIR / "templates" / "main.template.typ"
+if not MAIN_TYP_EN.exists() and (BASE_DIR / "templates" / "main.template.typ").exists():
+    MAIN_TYP_EN = BASE_DIR / "templates" / "main.template.typ"
+if not MAIN_TYP_DE.exists() and (BASE_DIR / "templates" / "main_de.template.typ").exists():
+    MAIN_TYP_DE = BASE_DIR / "templates" / "main_de.template.typ"
 
 
 # --- HELPER FUNCTIONS FOR REVIEW TRACKING ---
@@ -45,7 +52,6 @@ def mark_job_in_reviewed_file(job_url, title, company, status="Rejected", color=
     clean_url = str(job_url).split('?')[0].rstrip('/') if job_url else ""
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     
-    # Fills: Yellow for Rejected/Skip, Blue for Applied/Interview
     fills = {
         "YELLOW": PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid"),
         "BLUE": PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid"),
@@ -64,7 +70,6 @@ def mark_job_in_reviewed_file(job_url, title, company, status="Rejected", color=
         wb = openpyxl.load_workbook(REVIEWED_XLSX_PATH)
         ws = wb.active
 
-    # Check if already in file
     existing_urls = set()
     for row in ws.iter_rows(min_row=2, values_only=True):
         if len(row) >= 4 and row[3]:
@@ -126,8 +131,11 @@ selected_model = st.sidebar.selectbox(
 # Status indicators
 st.sidebar.divider()
 st.sidebar.caption("📁 Статус локальных файлов:")
-st.sidebar.write(f"• Master CV: {'✅ Найден' if MASTER_CV_PATH.exists() else '❌ Не найден'}")
-st.sidebar.write(f"• Typst Main: {'✅ Найден' if MAIN_TYP_PATH.exists() else '❌ Не найден'}")
+st.sidebar.write(f"• Master CV (EN): {'✅ Найден' if MASTER_CV_EN.exists() else '❌ Не найден'}")
+st.sidebar.write(f"• Master CV (DE): {'✅ Найден' if MASTER_CV_DE.exists() else '❌ Не найден'}")
+st.sidebar.write(f"• Typst Main (EN): {'✅ Найден' if MAIN_TYP_EN.exists() else '❌ Не найден'}")
+st.sidebar.write(f"• Typst Main (DE): {'✅ Найден' if MAIN_TYP_DE.exists() else '❌ Не найден'}")
+
 reviewed_count = len(get_all_reviewed_urls())
 st.sidebar.write(f"• Отслежено вакансий: **{reviewed_count}** шт.")
 
@@ -141,6 +149,8 @@ if "jd_text" not in st.session_state:
     st.session_state.jd_text = ""
 if "target_role" not in st.session_state:
     st.session_state.target_role = ""
+if "target_lang" not in st.session_state:
+    st.session_state.target_lang = "English"
 
 
 # --- GEMINI CLIENT ---
@@ -150,19 +160,28 @@ def get_client(api_key: str):
 
 client = get_client(api_key_input)
 
-master_cv_content = ""
-if MASTER_CV_PATH.exists():
-    with open(MASTER_CV_PATH, "r", encoding="utf-8") as f:
-        master_cv_content = f.read()
 
+def get_system_instruction(target_lang="English"):
+    """Dynamically generate system prompt based on selected resume language."""
+    cv_path = MASTER_CV_DE if target_lang == "Deutsch" and MASTER_CV_DE.exists() else MASTER_CV_EN
+    cv_content = ""
+    if cv_path.exists():
+        with open(cv_path, "r", encoding="utf-8") as f:
+            cv_content = f.read()
 
-SYSTEM_INSTRUCTION = f"""
+    lang_rule = (
+        "Execute Phase 1 strictly in RUSSIAN. Execute Phase 2 strictly in GERMAN (valid Typst code, high-density professional German ATS terminology, e.g. '01/2023 – Heute', 'Freiberuflich / Selbstständig')."
+        if target_lang == "Deutsch"
+        else "Execute Phase 1 strictly in RUSSIAN. Execute Phase 2 strictly in ENGLISH (valid Typst code)."
+    )
+
+    return f"""
 <role>
 You are an expert ATS Optimization Architect and Lead Technical Recruiter specializing in European tech hubs (Berlin, Munich, Zurich). Your task is to analyze a candidate's Master CV against a target Job Description (JD) through a rigorous two-phase interactive process and generate precise Typst variable declarations.
 </role>
 
 <rules>
-1. LANGUAGE RULE: Execute Phase 1 strictly in RUSSIAN. Execute Phase 2 strictly in ENGLISH (valid Typst code).
+1. LANGUAGE RULE: {lang_rule}
 2. Strictly execute Phase 1 first. Do NOT generate Phase 2 until the user responds to Phase 1 clarification questions.
 3. Maintain a strict 1-page total document budget. Select only the 2-3 most impactful bullet points per role.
 4. ATS DELIMITERS: NEVER use vertical pipes ("|"). Use only standard middle dots (" · ") or commas for separators.
@@ -171,9 +190,10 @@ You are an expert ATS Optimization Architect and Lead Technical Recruiter specia
 </rules>
 
 <master_cv>
-{master_cv_content}
+{cv_content}
 </master_cv>
 """
+
 
 def send_message_with_retry(chat_session, prompt_text, max_retries=3):
     for attempt in range(max_retries):
@@ -264,30 +284,40 @@ with tab_feed:
                         st.metric("Match", f"{score}%")
 
                     # Action buttons in one clean line
-                    b_col1, b_col2, b_col3, b_col4 = st.columns([2, 2, 2, 3])
+                    b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns([2, 2, 2, 2, 2])
                     
                     with b_col1:
                         if url:
-                            st.link_button("🔗 Открыть вакансию", url, help="Открыть страницу вакансии в новой вкладке")
+                            st.link_button("🔗 Открыть", url, help="Открыть страницу вакансии в новой вкладке")
                         else:
                             st.button("Нет ссылки", disabled=True, key=f"nourl_{idx}")
 
                     with b_col2:
-                        if st.button("⚡ Адаптировать CV", key=f"tailor_{idx}", type="primary"):
+                        if st.button("🇬🇧 CV (EN)", key=f"tailor_en_{idx}", type="primary", help="Адаптировать резюме на английском"):
                             st.session_state.jd_text = desc
                             st.session_state.target_role = title
+                            st.session_state.target_lang = "English"
                             st.session_state.phase_1_response = None
                             st.session_state.chat = None
-                            st.toast(f"Вакансия '{title}' скопирована в ATS Tailor!", icon="⚡")
+                            st.toast(f"Вакансия '{title}' (EN) скопирована в ATS Tailor!", icon="🇬🇧")
 
                     with b_col3:
-                        if st.button("🟡 Не подходит", key=f"reject_{idx}", help="Пометить желтым и скрыть"):
+                        if st.button("🇩🇪 CV (DE)", key=f"tailor_de_{idx}", help="Адаптировать резюме на немецком"):
+                            st.session_state.jd_text = desc
+                            st.session_state.target_role = title
+                            st.session_state.target_lang = "Deutsch"
+                            st.session_state.phase_1_response = None
+                            st.session_state.chat = None
+                            st.toast(f"Вакансия '{title}' (DE) скопирована в ATS Tailor!", icon="🇩🇪")
+
+                    with b_col4:
+                        if st.button("🟡 Пропуск", key=f"reject_{idx}", help="Пометить желтым и скрыть"):
                             mark_job_in_reviewed_file(url, title, company, status="Rejected", color="YELLOW")
                             st.toast(f"Отмечено как 'Не подходит': {title}", icon="🟡")
                             st.rerun()
 
-                    with b_col4:
-                        if st.button("🔵 Откликнулся", key=f"apply_{idx}", help="Пометить синим как 'Откликнулся'"):
+                    with b_col5:
+                        if st.button("🔵 Отклик", key=f"apply_{idx}", help="Пометить синим как 'Откликнулся'"):
                             mark_job_in_reviewed_file(url, title, company, status="Applied", color="BLUE")
                             st.toast(f"Отмечено как 'Отклик': {title}", icon="🔵")
                             st.rerun()
@@ -305,18 +335,31 @@ with tab_feed:
 with tab_tailor:
     st.subheader("⚡ Интерактивная адаптация резюме (ATS Engine)")
 
+    c_lang, c_space = st.columns([2, 3])
+    with c_lang:
+        selected_lang = st.radio(
+            "Язык итогового резюме:",
+            options=["English", "Deutsch"],
+            index=0 if st.session_state.target_lang == "English" else 1,
+            horizontal=True
+        )
+        st.session_state.target_lang = selected_lang
+
+    active_cv_path = MASTER_CV_DE if selected_lang == "Deutsch" and MASTER_CV_DE.exists() else MASTER_CV_EN
+    active_typ_path = MAIN_TYP_DE if selected_lang == "Deutsch" and MAIN_TYP_DE.exists() else MAIN_TYP_EN
+
     if not api_key_input:
         st.warning("⚠️ Для генерации укажите Gemini API Key в боковой панели слева.")
-    elif not MASTER_CV_PATH.exists():
-        st.error("❌ Не найден файл `Master_CV.md`.")
-    elif not MAIN_TYP_PATH.exists():
-        st.error("❌ Не найден файл `main.typ`.")
+    elif not active_cv_path.exists():
+        st.error(f"❌ Не найден файл `{active_cv_path.name}`.")
+    elif not active_typ_path.exists():
+        st.error(f"❌ Не найден файл `{active_typ_path.name}`.")
     else:
         jd_input = st.text_area(
             "Текст вакансии (Job Description):",
             value=st.session_state.jd_text,
             height=180,
-            placeholder="Вставьте описание вакансии или нажмите '⚡ Адаптировать CV' в Ленте вакансий..."
+            placeholder="Вставьте описание вакансии или нажмите кнопку адаптации в Ленте вакансий..."
         )
 
         col1, col2 = st.columns([1, 5])
@@ -333,10 +376,11 @@ with tab_tailor:
             st.session_state.jd_text = jd_input
             with st.spinner("Анализирую соответствие Master CV требованиям вакансии..."):
                 try:
+                    sys_inst = get_system_instruction(selected_lang)
                     st.session_state.chat = client.chats.create(
                         model=selected_model,
                         config=types.GenerateContentConfig(
-                            system_instruction=SYSTEM_INSTRUCTION,
+                            system_instruction=sys_inst,
                             temperature=0.2,
                         )
                     )
@@ -350,13 +394,13 @@ with tab_tailor:
 
                     Сравни <master_cv> и <job_description>. Выведи СТРОГО следующие два блока на русском языке:
 
-                    1. **ATS Анализ соответствия:**
+                    1. **ATS Анализ соответствия ({'на немецком языке' if selected_lang == 'Deutsch' else 'на английском языке'}):**
                        - Оценка совпадения (в % от 0 до 100%).
                        - Совпавшие ключевые слова (навыки, инструменты и процессы из вакансии, которые уже есть в CV).
                        - Критические пробелы, если есть (требования вакансии, которые отсутствуют или слабо выражены).
 
                     2. **Уточняющие вопросы (максимум 3 вопроса):**
-                       - Вопрос по недостающему софту/инструментам (уточнить, пишем ли "Working knowledge of [Инструмент]").
+                       - Вопрос по недостающему софту/инструментам (уточнить, пишем ли "Working knowledge of [Инструмент]" / "Gute Kenntnisse in [Tool]").
                        - Вопрос по адаптации софт-скиллов и формулировок под специфику роли.
                        - Вопрос по тональности (строго корпоративная [Corporate-Safe] или стартап-профиль).
 
@@ -386,7 +430,7 @@ with tab_tailor:
                         User Answers:
                         {user_answers if user_answers.strip() else "Proceed with standard optimal mappings based on Master CV."}
 
-                        --- PHASE 2: TYPST VARIABLE GENERATION (IN ENGLISH) ---
+                        --- PHASE 2: TYPST VARIABLE GENERATION ({'IN GERMAN' if selected_lang == 'Deutsch' else 'IN ENGLISH'}) ---
 
                         Generate the exact Typst variable block ready to paste directly into `tailored.typ`:
 
@@ -397,9 +441,9 @@ with tab_tailor:
                         ]
 
                         #let skills = [
-                          - *Core Technical & Systems:* Keyword 1, Keyword 2, Keyword 3, Keyword 4
-                          - *Tools & Platforms:* Tool 1, Tool 2, Tool 3, Tool 4
-                          - *Operational Methodologies:* Method 1, Method 2, Method 3
+                          - *{'Kernkompetenzen & Systeme:' if selected_lang == 'Deutsch' else 'Core Technical & Systems:'}* Keyword 1, Keyword 2, Keyword 3, Keyword 4
+                          - *{'Tools & Plattformen:' if selected_lang == 'Deutsch' else 'Tools & Platforms:'}* Tool 1, Tool 2, Tool 3, Tool 4
+                          - *{'Methoden & Standards:' if selected_lang == 'Deutsch' else 'Operational Methodologies:'}* Method 1, Method 2, Method 3
                         ]
 
                         #let experience = [
@@ -433,21 +477,22 @@ with tab_tailor:
                         role_slug = re.sub(r'[\\/*?:"<>|]', "", role_title).replace(" ", "_").replace("/", "-")
 
                         date_str = datetime.now().strftime("%Y-%m-%d")
-                        output_pdf_name = f"CV_Tailored_{role_slug}_{date_str}.pdf"
+                        lang_suffix = "DE" if selected_lang == "Deutsch" else "EN"
+                        output_pdf_name = f"CV_Tailored_{role_slug}_{date_str}_{lang_suffix}.pdf"
                         output_pdf_path = OUTPUT_DIR / output_pdf_name
 
-                        # Compile Typst
+                        # Compile Typst using active template
                         compile_res = subprocess.run(
-                            ["typst", "compile", str(MAIN_TYP_PATH), str(output_pdf_path)],
+                            ["typst", "compile", str(active_typ_path), str(output_pdf_path)],
                             capture_output=True,
                             text=True
                         )
 
                         if compile_res.returncode == 0:
-                            st.success(f"✅ Резюме успешно скомпилировано в 1 страницу: `{output_pdf_name}`")
+                            st.success(f"✅ Резюме успешно скомпилировано в 1 страницу ({selected_lang}): `{output_pdf_name}`")
                             with open(output_pdf_path, "rb") as pdf_file:
                                 st.download_button(
-                                    label="📥 Скачать готовый PDF",
+                                    label=f"📥 Скачать готовый PDF ({selected_lang})",
                                     data=pdf_file.read(),
                                     file_name=output_pdf_name,
                                     mime="application/pdf"
@@ -507,13 +552,16 @@ with tab_guide:
     st.markdown("""
     ### 🔄 Рабочий процесс полного цикла (Workflow):
     1. **Сбор вакансий:** Запустите `main.py` (или нажмите кнопку во вкладке 3).
-    2. **Отбор и проверка:** Во вкладке **«Лента вакансий»** открывайте ссылки в 1 клик. Если вакансия не подходит — жмите 🟡 `Не подходит` (она больше не появится).
-    3. **Генерация резюме:** Нажмите ⚡ `Адаптировать CV` ➔ ответьте на 3 уточняющих вопроса ➔ скачайте идеальный 1-страничный PDF.
+    2. **Отбор и проверка:** Во вкладке **«Лента вакансий»** открывайте ссылки в 1 клик. Если вакансия не подходит — жмите 🟡 `Пропуск` (она больше не появится).
+    3. **Генерация резюме (EN или DE):**
+       - Нажмите 🇬🇧 `CV (EN)` или 🇩🇪 `CV (DE)` прямо в карточке вакансии.
+       - Ответьте на 3 уточняющих вопроса в Фазе 1.
+       - Скачайте идеальный 1-страничный PDF на нужном языке.
     
     ---
     ### 📂 Структура файлов резюме:
-    - **`Master_CV.md`** — Ваш банк опыта, список инструментов и матрица соответствия терминов.
-    - **`main.typ`** — Скелет резюме Typst (контакты, статичные секции: проекты, образование).
+    - **`Master_CV.md` / `Master_CV_DE.md`** — Банк опыта (на английском и немецком языках).
+    - **`main.typ` / `main_de.typ`** — Скелеты резюме Typst с заголовками и статичными блоками.
     - **`tailored.typ`** — Динамический файл, куда AI записывает адаптированные под вакансию summary, skills и bullet points.
     - **`templates/`** — Обезличенные шаблоны для новых пользователей на GitHub.
     """)
