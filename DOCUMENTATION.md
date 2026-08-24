@@ -78,8 +78,11 @@ flowchart TD
 
 ## 3. Component Deep-Dive
 
-### 3.1 Scraper & VC Connector Engine
-* **`main.py`:** Orchestrates the multi-source pipeline, handling query batching, random rate-limit jitter (2–4 seconds), progress bars (`tqdm`), and timestamped exports.
+### 3.1 Scraper, Google Jobs & VC Connector Engine
+* **`main.py`:** Orchestrates the multi-source pipeline, handling query batching, random rate-limit jitter (1.5–3 seconds), Real-time live streaming (`jobs_live_stream.csv`), and timestamped exports.
+* **`google_jobs_scraper.py`:**
+  - **Playwright Stealth Engine:** Launches headless Chromium with anti-detection flags (`--disable-blink-features=AutomationControlled`, disabled `navigator.webdriver`), handles cookie banners, and extracts structured Google Jobs cards.
+  - **SerpApi Support:** Optional 100% reliable fallback for Google Jobs when a free SerpApi key is provided in `config.py`.
 * **`custom_boards.py`:**
   - **AshbyHQ API:** Queries `https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams` with organization handles (`earlybird`, `atlanticlabsfoodlabsplatform`, `hvcapital`, `pointnine`, `planeta`).
   - **Greenhouse API:** Queries `https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true`.

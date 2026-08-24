@@ -29,24 +29,26 @@ graph TD
 
 ## ✨ Key Features
 
-### 🌐 1. Multi-Source Job Aggregation
+### 🌐 1. Multi-Source Job Aggregation (LinkedIn, Indeed, Google Jobs & VC Portfolios)
 - **Job Boards:** Scrapes LinkedIn & Indeed via `python-jobspy`.
+- **Google Jobs:** Native **Playwright Stealth** engine with anti-detection and cookie-bypass, plus optional SerpApi support.
 - **VC Portfolios:** Direct official API connectors for **AshbyHQ** (Earlybird, Atlantic Labs, Point Nine, HV Capital, Planet A) and **Greenhouse** (Cherry Ventures).
 - **Niche Boards:** **Arbeitnow API** & **Berlin Startup Jobs RSS**.
-- **Deep LinkedIn Scraping:** Automatically fetches full *"About the job"* descriptions for preview cards.
+- **Deep LinkedIn Scraping:** Fast 5-thread concurrent fetcher for full *"About the job"* descriptions.
 
 ### 🧹 2. Smart Regex & Language Filtering
 - Automatically catches and excludes hidden local language requirements (*"fluent German"*, *"C1 Niveau"*, *"Muttersprache"*, *"español imprescindible"*).
 - Pre-configured presets in `config.py` for **German, Spanish, French**, or easily extensible to any language.
 
 ### 📋 3. Interactive Dashboard & Application Tracker
+- **Real-Time Live Feed:** View and interact with newly discovered jobs while background queries continue.
 - **1-Click Job Links:** Open postings in new browser tabs instantly.
 - **Review Buttons:** Mark postings as 🟡 *Rejected* or 🔵 *Applied* with automatic persistence to `reviewed.xlsx`.
 - **Cumulative Deduplication:** Scans all historical spreadsheets so old vacancies are never shown again.
 
 ### ⚡ 4. AI ATS Resume Tailor & Typst Compiler (Bilingual EN / DE)
 - **Bilingual Generation:** 1-click tailored resume generation in **English** (`main.typ`) or **German** (`main_de.typ`).
-- **Phase 1 (Gap Analysis):** Gemini analyzes your Master CV against the Job Description, calculates ATS Match %, and asks up to 3 strategic clarification questions in Russian.
+- **Phase 1 (Gap Analysis):** Gemini analyzes your Master CV against the Job Description, calculates ATS Match %, and asks up to 3 strategic clarification questions.
 - **Phase 2 (Typst Variable Generation):** Generates clean, sanitized Typst variables within a strict 1-page document budget.
 - **Instant Compilation:** Compiles to PDF via **Typst** with high-density layout, zero margin waste, and strict ASCII encoding.
 
@@ -60,7 +62,8 @@ job-flow-automator/
 ├── Run_JobFlow.bat              # 🚀 1-Click Windows startup launcher
 ├── app.py                       # 🌐 Unified Streamlit Web Dashboard (Feed + Tailor + Scraper)
 │
-├── main.py                      # 🚀 Standalone Scraper Orchestrator CLI
+├── main.py                      # 🚀 Standalone Scraper Orchestrator CLI (Live streaming & fast pool)
+├── google_jobs_scraper.py       # 🌐 Google Jobs Playwright Stealth & SerpApi connector
 ├── config.py                    # ⚙️ Search categories, regex rules, candidate keywords, location
 ├── custom_boards.py             # 🔌 Direct API connectors for Ashby, Greenhouse, Arbeitnow
 ├── filter_reviewed.py           # 🎨 Cumulative historical review filter CLI
