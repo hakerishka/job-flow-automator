@@ -14,6 +14,14 @@ import os
 import glob
 import sys
 import re
+
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 import pandas as pd
 import openpyxl
 

@@ -7,11 +7,20 @@ Fast direct connectors for VC portfolio job boards and niche platforms:
 - AshbyHQ GraphQL API (Earlybird VC, Atlantic Labs, HV Capital, Point Nine, Planet A)
 """
 
+import sys
+import os
 import time
 import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
+
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 import config
 

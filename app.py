@@ -536,7 +536,15 @@ with tab_scraper:
         with st.status("Выполняется сбор и обработка вакансий...", expanded=True) as status:
             st.write("1. Запуск оркестратора `main.py`...")
             
-            res = subprocess.run(["python", str(BASE_DIR / "main.py")], capture_output=True, text=True)
+            sub_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+            res = subprocess.run(
+                [sys.executable, str(BASE_DIR / "main.py")],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=sub_env
+            )
             
             st.text(res.stdout)
             if res.stderr:

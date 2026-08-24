@@ -9,10 +9,21 @@ Automated workflow:
   6. Timestamped CSV export
 """
 
+import sys
+import os
 import re
 import time
 import random
 from datetime import datetime
+
+# Ensure standard UTF-8 stream output on Windows
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
