@@ -281,16 +281,46 @@ with tab_feed:
             if 'match_score' in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df['match_score'] >= min_score]
 
-            # Category filter
-            categories = ["Все категории"] + sorted(list(filtered_df['category'].dropna().unique())) if 'category' in filtered_df.columns else []
-            selected_cat = st.selectbox("Фильтр по категории:", categories)
-            if selected_cat != "Все категории":
-                filtered_df = filtered_df[filtered_df['category'] == selected_cat]
+            # Category and Pagination controls
+            c_cat, c_per_page = st.columns([3, 1])
+            with c_cat:
+                categories = ["Все категории"] + sorted(list(filtered_df['category'].dropna().unique())) if 'category' in filtered_df.columns else []
+                selected_cat = st.selectbox("Фильтр по категории:", categories)
+                if selected_cat != "Все категории":
+                    filtered_df = filtered_df[filtered_df['category'] == selected_cat]
+            with c_per_page:
+                page_size = st.selectbox("На странице:", [15, 25, 50, 100], index=1)
 
-            st.caption(f"Найдено: **{len(filtered_df)}** вакансий (из {len(df)} исходных)")
+            total_jobs = len(filtered_df)
+            total_pages = max(1, (total_jobs + page_size - 1) // page_size)
 
-            # Render Cards
-            for idx, row in filtered_df.iterrows():
+            if "current_page" not in st.session_state:
+                st.session_state.current_page = 1
+            if st.session_state.current_page > total_pages:
+                st.session_state.current_page = total_pages
+
+            # Pagination bar
+            p_col1, p_col2, p_col3, p_col4 = st.columns([1, 2, 1, 2])
+            with p_col1:
+                if st.button("◀ Назад", disabled=(st.session_state.current_page <= 1), use_container_width=True):
+                    st.session_state.current_page -= 1
+                    st.rerun()
+            with p_col2:
+                st.markdown(f"<p style='text-align: center; margin-top: 6px;'><b>Страница {st.session_state.current_page} из {total_pages}</b> (всего: {total_jobs})</p>", unsafe_allow_html=True)
+            with p_col3:
+                if st.button("Вперед ▶", disabled=(st.session_state.current_page >= total_pages), use_container_width=True):
+                    st.session_state.current_page += 1
+                    st.rerun()
+            with p_col4:
+                st.caption(f"Показано {min(total_jobs, (st.session_state.current_page - 1) * page_size + 1)}–{min(total_jobs, st.session_state.current_page * page_size)} из {total_jobs}")
+
+            # Slice df for active page
+            start_idx = (st.session_state.current_page - 1) * page_size
+            end_idx = start_idx + page_size
+            page_df = filtered_df.iloc[start_idx:end_idx]
+
+            # Render Cards for current page
+            for idx, row in page_df.iterrows():
                 title = row.get('title', 'Unknown Title')
                 company = row.get('company', 'Unknown Company')
                 category = row.get('category', 'General')
