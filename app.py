@@ -86,9 +86,10 @@ def mark_job_in_reviewed_file(job_url, title, company, status="Rejected", color=
 
 
 def get_all_reviewed_urls():
-    """Retrieve set of all marked URLs across all .xlsx files in directory."""
+    """Retrieve set of all marked URLs across all .xlsx files in project and history/."""
     marked_urls = set()
-    for xlsx_file in glob.glob(str(BASE_DIR / "*.xlsx")):
+    xlsx_files = glob.glob(str(BASE_DIR / "*.xlsx")) + glob.glob(str(BASE_DIR / "history" / "*.xlsx"))
+    for xlsx_file in set(xlsx_files):
         try:
             wb = openpyxl.load_workbook(xlsx_file, data_only=True)
             ws = wb.active
@@ -226,7 +227,7 @@ tab_feed, tab_tailor, tab_scraper, tab_guide = st.tabs([
 with tab_feed:
     st.subheader("📋 Лента собранных вакансий")
     
-    csv_files = glob.glob(str(BASE_DIR / "jobs_clean_*.csv")) + glob.glob(str(BASE_DIR / "berlin_jobs_clean_*.csv"))
+    csv_files = glob.glob(str(BASE_DIR / "jobs_clean_*.csv")) + glob.glob(str(BASE_DIR / "berlin_jobs_clean_*.csv")) + glob.glob(str(BASE_DIR / "history" / "*.csv"))
     csv_files = sorted(list(set(csv_files)), key=os.path.getctime, reverse=True)
 
     if not csv_files:
