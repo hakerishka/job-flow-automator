@@ -29,11 +29,11 @@ graph TD
 
 ## ✨ Key Features
 
-### 🌐 1. Multi-Source Job Aggregation (LinkedIn, Indeed, Google Jobs & VC Portfolios)
+### 🌐 1. Multi-Source Job Aggregation (LinkedIn, Indeed, VC Portfolios & Scaleup APIs)
 - **Job Boards:** Scrapes LinkedIn & Indeed via `python-jobspy`.
-- **Google Jobs:** Native **Playwright Stealth** engine with anti-detection and cookie-bypass, plus optional SerpApi support.
-- **VC Portfolios:** Direct official API connectors for **AshbyHQ** (Earlybird, Atlantic Labs, Point Nine, HV Capital, Planet A) and **Greenhouse** (Cherry Ventures).
-- **Niche Boards:** **Arbeitnow API** & **Berlin Startup Jobs RSS**.
+- **AshbyHQ API Connectors:** Direct, official APIs for leading AI and tech scaleups (**n8n, ElevenLabs, PostHog, Linear, Sentry, Perplexity AI, Langfuse, Modal, OpenAI**).
+- **Greenhouse API Connectors:** Direct, official APIs for top VC portfolios and European unicorns (**Cherry Ventures, N26, Celonis, Contentful, Trade Republic, Figma, Stripe**).
+- **Niche Tech Boards:** **Arbeitnow API** & **Berlin Startup Jobs RSS**.
 - **Deep LinkedIn Scraping:** Fast 5-thread concurrent fetcher for full *"About the job"* descriptions.
 
 ### 🧹 2. Smart Regex & Language Filtering
@@ -63,7 +63,6 @@ job-flow-automator/
 ├── app.py                       # 🌐 Unified Streamlit Web Dashboard (Feed + Tailor + Scraper)
 │
 ├── main.py                      # 🚀 Standalone Scraper Orchestrator CLI (Live streaming & fast pool)
-├── google_jobs_scraper.py       # 🌐 Google Jobs Playwright Stealth & SerpApi connector
 ├── config.py                    # ⚙️ Search categories, regex rules, candidate keywords, location
 ├── custom_boards.py             # 🔌 Direct API connectors for Ashby, Greenhouse, Arbeitnow
 ├── filter_reviewed.py           # 🎨 Cumulative historical review filter CLI

@@ -16,18 +16,6 @@ COUNTRY_INDEED = "germany"
 # Scrape platforms for JobSpy ('linkedin', 'indeed', 'glassdoor', 'zip_recruiter')
 SEARCH_SITES = ["linkedin", "indeed"]
 
-# Google Jobs (Native Playwright Stealth Engine)
-ENABLE_GOOGLE_JOBS = True
-GOOGLE_JOBS_MAX_PER_QUERY = 15
-GOOGLE_JOBS_FOCUS_QUERIES = [
-    "AI Operations",
-    "Product Operations",
-    "Technical Solutions Specialist",
-    "Deployment Specialist",
-    "Founder Associate",
-    "Technical Operations"
-]
-
 # How many hours back to look (168 = 7 days, 72 = 3 days, 24 = 1 day)
 HOURS_OLD = 168
 

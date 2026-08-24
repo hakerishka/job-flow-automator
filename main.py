@@ -34,7 +34,6 @@ from jobspy import scrape_jobs
 
 import config
 from custom_boards import fetch_all_custom_boards
-from google_jobs_scraper import scrape_google_jobs
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LIVE_STREAM_PATH = os.path.join(BASE_DIR, "jobs_live_stream.csv")
@@ -257,20 +256,11 @@ def main():
             
             time.sleep(random.uniform(1.5, 3.0))
 
-    # 4. Optional Google Jobs Scraping (Playwright Stealth)
-    if getattr(config, 'ENABLE_GOOGLE_JOBS', False):
-        google_queries = getattr(config, 'GOOGLE_JOBS_FOCUS_QUERIES', ["AI Operations", "Product Operations"])
-        max_google = getattr(config, 'GOOGLE_JOBS_MAX_PER_QUERY', 15)
-        df_google = scrape_google_jobs(google_queries, location=config.LOCATION, max_per_query=max_google, headless=True)
-        if not df_google.empty:
-            df_google['category'] = 'Google Jobs'
-            all_jobs_master.append(df_google)
-
     if not all_jobs_master:
         print("❌ No jobs found. Exiting.", flush=True)
         return
 
-    # 5. Final Aggregation & Multithreaded Enrichment
+    # 3. Final Aggregation & Multithreaded Enrichment
     print("\n🧹 [STAGE 3/3] DEDUPLICATION, FAST ENRICHMENT & FINAL SCORING...", flush=True)
     df_raw = pd.concat(all_jobs_master, ignore_index=True)
     raw_total = len(df_raw)

@@ -1,10 +1,10 @@
 """
-🔌 CUSTOM BOARDS MODULE
-Fast direct connectors for VC portfolio job boards and niche platforms:
-- Arbeitnow API (Direct tech/English roles in Germany/EU)
-- Berlin Startup Jobs (RSS Feed)
-- Greenhouse API (Cherry Ventures Portfolio)
-- AshbyHQ GraphQL API (Earlybird VC, Atlantic Labs, HV Capital, Point Nine, Planet A)
+🔌 CUSTOM BOARDS MODULE (VC Portfolios, Scaleups & Tech Ecosystems)
+Direct, unblocked, and official API connectors:
+- AshbyHQ Posting API: n8n, ElevenLabs, PostHog, Linear, Sentry, Perplexity, Langfuse, Modal, OpenAI
+- Greenhouse Public Boards API: Cherry Ventures, N26, Celonis, Contentful, Trade Republic, Figma, Stripe
+- Arbeitnow API: Germany & Remote tech jobs
+- Berlin Startup Jobs RSS: Real-time Berlin startup postings
 """
 
 import sys
@@ -24,6 +24,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 import config
 
+
 def get_arbeitnow_jobs():
     """Fetch jobs from Arbeitnow public API."""
     jobs_list = []
@@ -34,8 +35,7 @@ def get_arbeitnow_jobs():
             data = res.json().get('data', [])
             for job in data:
                 location = str(job.get('location', '')).lower()
-                # Filter for target city or remote
-                if 'berlin' in location or 'remote' in location or 'germany' in location:
+                if 'berlin' in location or 'remote' in location or 'germany' in location or 'deutschland' in location:
                     soup = BeautifulSoup(job.get('description', ''), "html.parser")
                     desc = soup.get_text(separator='\n', strip=True)
                     
@@ -85,86 +85,115 @@ def get_bsj_rss_jobs():
 
 
 def get_greenhouse_vc_jobs():
-    """Fetch jobs from Greenhouse public board API (Cherry Ventures Portfolio)."""
+    """Fetch jobs from Greenhouse public APIs (VC Portfolios & European Tech Scaleups)."""
+    boards = [
+        ('Cherry Ventures', 'cherryventures'),
+        ('N26 (Berlin)', 'n26'),
+        ('Celonis (Munich/Remote)', 'celonis'),
+        ('Contentful (Berlin)', 'contentful'),
+        ('Trade Republic', 'traderepublic'),
+        ('Figma', 'figma'),
+        ('Stripe', 'stripe')
+    ]
+    
     jobs_list = []
-    print("  -> [API] Fetching from Cherry Ventures (Greenhouse)...")
-    try:
-        res = requests.get("https://boards-api.greenhouse.io/v1/boards/cherryventures/jobs?content=true", timeout=10)
-        if res.status_code == 200:
-            data = res.json().get('jobs', [])
-            for job in data:
-                location = str(job.get('location', {}).get('name', '')).lower()
-                if 'berlin' in location or 'remote' in location or location == '' or 'germany' in location:
-                    soup = BeautifulSoup(job.get('content', ''), "html.parser")
-                    desc = soup.get_text(separator='\n', strip=True)
-                    
-                    jobs_list.append({
-                        'title': job.get('title'),
-                        'company': 'Cherry VC Portfolio',
-                        'location': job.get('location', {}).get('name', 'Berlin'),
-                        'site': 'greenhouse_vc',
-                        'job_url': job.get('absolute_url'),
-                        'date_posted': job.get('updated_at'),
-                        'description': desc
-                    })
-    except Exception as e:
-        print(f"     ⚠️ Error fetching Greenhouse (Cherry Ventures): {e}")
+    for company_name, board_slug in boards:
+        try:
+            res = requests.get(f"https://boards-api.greenhouse.io/v1/boards/{board_slug}/jobs?content=true", timeout=8)
+            if res.status_code == 200:
+                data = res.json().get('jobs', [])
+                for job in data:
+                    location = str(job.get('location', {}).get('name', '')).lower()
+                    if 'berlin' in location or 'remote' in location or location == '' or 'germany' in location or 'deutschland' in location or 'europe' in location:
+                        soup = BeautifulSoup(job.get('content', ''), "html.parser")
+                        desc = soup.get_text(separator='\n', strip=True)
+                        
+                        jobs_list.append({
+                            'title': job.get('title'),
+                            'company': company_name,
+                            'location': job.get('location', {}).get('name', 'Berlin / Remote'),
+                            'site': 'greenhouse',
+                            'job_url': job.get('absolute_url'),
+                            'date_posted': job.get('updated_at'),
+                            'description': desc
+                        })
+        except Exception as e:
+            print(f"     ⚠️ Error fetching Greenhouse ({company_name}): {e}")
+            
+    print(f"  -> [API] Greenhouse connectors fetched: {len(jobs_list)} candidate roles.")
     return jobs_list
 
 
 def get_ashby_vc_jobs():
-    """Fetch jobs from top VC portfolios hosted on AshbyHQ GraphQL API."""
+    """Fetch jobs from AshbyHQ public Posting APIs (AI Leaders & European Scaleups)."""
     boards = [
-        ('Earlybird VC', 'earlybird'),
-        ('Atlantic Labs', 'atlanticlabsfoodlabsplatform'),
-        ('HV Capital', 'hvcapital'),
-        ('Point Nine', 'pointnine'),
-        ('Planet A', 'planeta')
+        ('n8n (Berlin / Remote)', 'n8n'),
+        ('ElevenLabs', 'elevenlabs'),
+        ('PostHog', 'posthog'),
+        ('Linear', 'linear'),
+        ('Sentry', 'sentry'),
+        ('Perplexity AI', 'perplexity'),
+        ('Langfuse (Berlin)', 'langfuse'),
+        ('Modal Labs', 'modal'),
+        ('OpenAI', 'openai')
     ]
     
     jobs_list = []
-    url = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams"
-    
-    for vc_name, board_name in boards:
-        print(f"  -> [API] Fetching from {vc_name} (Ashby)...")
+    for company_name, board_slug in boards:
         try:
-            payload = {
-                "operationName": "ApiJobBoardWithTeams",
-                "variables": {"organizationHostedJobsPageName": board_name},
-                "query": "query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) { jobBoard: jobBoardWithTeams(organizationHostedJobsPageName: $organizationHostedJobsPageName) { jobPostings { title locationName jobUrl updatedAt } } }"
-            }
-            res = requests.post(url, json=payload, headers=config.REQUEST_HEADERS, timeout=10)
+            url = f"https://api.ashbyhq.com/posting-api/job-board/{board_slug}"
+            res = requests.get(url, headers=config.REQUEST_HEADERS, timeout=8)
             if res.status_code == 200:
-                postings = res.json().get('data', {}).get('jobBoard', {}).get('jobPostings', [])
+                postings = res.json().get('jobs', [])
                 for job in postings:
-                    location = str(job.get('locationName', '')).lower()
-                    if 'berlin' in location or 'remote' in location or 'germany' in location:
+                    location = str(job.get('location', '')).lower()
+                    is_remote = job.get('isRemote', False)
+                    if 'berlin' in location or 'remote' in location or 'germany' in location or 'deutschland' in location or is_remote or location == '':
+                        # Extract description
+                        desc_html = job.get('descriptionHtml', '') or job.get('descriptionPlain', '')
+                        soup = BeautifulSoup(desc_html, "html.parser")
+                        desc = soup.get_text(separator='\n', strip=True)
+
                         jobs_list.append({
                             'title': job.get('title'),
-                            'company': f'{vc_name} Portfolio',
-                            'location': job.get('locationName'),
-                            'site': 'ashby_vc',
-                            'job_url': job.get('jobUrl'),
-                            'date_posted': job.get('updatedAt'),
-                            'description': ''
+                            'company': company_name,
+                            'location': job.get('location', 'Berlin / Remote'),
+                            'site': 'ashby',
+                            'job_url': job.get('jobUrl') or job.get('applyUrl'),
+                            'date_posted': job.get('publishedAt'),
+                            'description': desc
                         })
-            time.sleep(0.5)
         except Exception as e:
-            print(f"     ⚠️ Error fetching Ashby ({vc_name}): {e}")
+            print(f"     ⚠️ Error fetching Ashby ({company_name}): {e}")
             
+    print(f"  -> [API] AshbyHQ connectors fetched: {len(jobs_list)} candidate roles.")
     return jobs_list
 
 
 def fetch_all_custom_boards():
-    """Aggregate jobs from all custom non-JobSpy sources."""
-    print("\n🌐 [CONNECTOR] FETCHING FROM VC PORTFOLIOS & NICHE PLATFORMS...")
-    all_jobs = []
-    all_jobs.extend(get_arbeitnow_jobs())
-    all_jobs.extend(get_bsj_rss_jobs())
-    all_jobs.extend(get_greenhouse_vc_jobs())
-    all_jobs.extend(get_ashby_vc_jobs())
+    """Aggregate jobs from all custom VC & Scaleup direct connectors."""
+    print("\n🌐 [CONNECTOR] FETCHING FROM VC PORTFOLIOS & SCALEUP PLATFORMS...", flush=True)
+    all_custom = []
     
-    df = pd.DataFrame(all_jobs)
-    if not df.empty:
-        print(f"✅ Alternative sources yielded: {len(df)} total jobs!")
-    return df
+    # 1. Arbeitnow API
+    arbeitnow = get_arbeitnow_jobs()
+    if arbeitnow:
+        all_custom.extend(arbeitnow)
+        
+    # 2. Berlin Startup Jobs RSS
+    bsj = get_bsj_rss_jobs()
+    if bsj:
+        all_custom.extend(bsj)
+        
+    # 3. Greenhouse VC & Scaleups
+    gh = get_greenhouse_vc_jobs()
+    if gh:
+        all_custom.extend(gh)
+        
+    # 4. AshbyHQ AI & Scaleups
+    ashby = get_ashby_vc_jobs()
+    if ashby:
+        all_custom.extend(ashby)
+        
+    print(f"✓ Total Direct VC/Scaleup jobs fetched: {len(all_custom)} roles.", flush=True)
+    return pd.DataFrame(all_custom) if all_custom else pd.DataFrame()

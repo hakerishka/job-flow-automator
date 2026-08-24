@@ -130,14 +130,6 @@ selected_model = st.sidebar.selectbox(
     index=0
 )
 
-serpapi_env = os.environ.get("SERPAPI_API_KEY", "")
-serpapi_key_input = st.sidebar.text_input(
-    "SerpApi Key (Google Jobs):",
-    value=serpapi_env,
-    type="password",
-    help="Опционально: бесплатный ключ SerpApi (100 поисков/мес) для 100% стабильного парсинга Google Jobs без блокировок."
-)
-
 # Status indicators
 st.sidebar.divider()
 st.sidebar.caption("📁 Статус локальных файлов:")
@@ -577,8 +569,6 @@ with tab_scraper:
             "PYTHONUTF8": "1",
             "PYTHONUNBUFFERED": "1"
         }
-        if serpapi_key_input:
-            sub_env["SERPAPI_API_KEY"] = serpapi_key_input
         
         proc = subprocess.Popen(
             [sys.executable, "-u", str(BASE_DIR / "main.py")],

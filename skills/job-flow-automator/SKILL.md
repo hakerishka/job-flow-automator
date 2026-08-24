@@ -27,9 +27,8 @@ Job-Flow Automator is an end-to-end Python & Typst career automation tool compri
 | [`app.py`](file:///c:/Users/haker/Downloads/JobSpy_fork/app.py) | Main Streamlit Web Hub (Job Feed, Review Tracker, ATS Tailor, Scraper Trigger). |
 | [`DOCUMENTATION.md`](file:///c:/Users/haker/Downloads/JobSpy_fork/DOCUMENTATION.md) | Exhaustive technical & architectural documentation, component deep-dives, and schemas. |
 | [`main.py`](file:///c:/Users/haker/Downloads/JobSpy_fork/main.py) | Standalone CLI scraper orchestrator (Scrapes -> Enriches -> Filters -> Scores -> Exports CSV). |
-| [`google_jobs_scraper.py`](file:///c:/Users/haker/Downloads/JobSpy_fork/google_jobs_scraper.py) | Google Jobs Playwright Stealth & SerpApi connector module. |
 | [`config.py`](file:///c:/Users/haker/Downloads/JobSpy_fork/config.py) | Search parameters, locations, target categories, regex language rules, skill profile keywords. |
-| [`custom_boards.py`](file:///c:/Users/haker/Downloads/JobSpy_fork/custom_boards.py) | Direct API connectors for AshbyHQ GraphQL, Greenhouse, Arbeitnow, and BSJ RSS. |
+| [`custom_boards.py`](file:///c:/Users/haker/Downloads/JobSpy_fork/custom_boards.py) | Direct REST & GraphQL API connectors for AshbyHQ (AI scaleups), Greenhouse (VCs & Unicorns), Arbeitnow, and BSJ. |
 | [`filter_reviewed.py`](file:///c:/Users/haker/Downloads/JobSpy_fork/filter_reviewed.py) | Cumulative historical filter scanning all `.xlsx` files and removing previously handled vacancies. |
 | [`Master_CV.md`](file:///c:/Users/haker/Downloads/JobSpy_fork/Master_CV.md) | Candidate's master experience bank (English). |
 | [`Master_CV_DE.md`](file:///c:/Users/haker/Downloads/JobSpy_fork/Master_CV_DE.md) | Candidate's master experience bank (German). |

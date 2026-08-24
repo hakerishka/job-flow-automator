@@ -78,16 +78,13 @@ flowchart TD
 
 ## 3. Component Deep-Dive
 
-### 3.1 Scraper, Google Jobs & VC Connector Engine
-* **`main.py`:** Orchestrates the multi-source pipeline, handling query batching, random rate-limit jitter (1.5–3 seconds), Real-time live streaming (`jobs_live_stream.csv`), and timestamped exports.
-* **`google_jobs_scraper.py`:**
-  - **Playwright Stealth Engine:** Launches headless Chromium with anti-detection flags (`--disable-blink-features=AutomationControlled`, disabled `navigator.webdriver`), handles cookie banners, and extracts structured Google Jobs cards.
-  - **SerpApi Support:** Optional 100% reliable fallback for Google Jobs when a free SerpApi key is provided in `config.py`.
+### 3.1 Scraper, VC & Scaleup Direct API Connectors
+* **`main.py`:** Orchestrates the multi-source pipeline, handling query batching, random rate-limit jitter (1.5–3 seconds), Real-time live streaming (`jobs_live_stream.csv`), fast 5-thread LinkedIn enrichment, and timestamped exports.
 * **`custom_boards.py`:**
-  - **AshbyHQ API:** Queries `https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams` with organization handles (`earlybird`, `atlanticlabsfoodlabsplatform`, `hvcapital`, `pointnine`, `planeta`).
-  - **Greenhouse API:** Queries `https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true`.
-  - **Arbeitnow API:** Queries `https://arbeitnow.com/api/job-board-api`.
-  - **BSJ RSS:** Parses XML feeds from `https://berlinstartupjobs.com/feed/`.
+  - **AshbyHQ Posting APIs:** High-speed REST connectors fetching directly from leading AI scaleups and tech platforms (`n8n`, `ElevenLabs`, `PostHog`, `Linear`, `Sentry`, `Perplexity AI`, `Langfuse`, `Modal Labs`, `OpenAI`).
+  - **Greenhouse Public Boards APIs:** Official API connectors for top European VC portfolios and unicorns (`Cherry Ventures`, `N26`, `Celonis`, `Contentful`, `Trade Republic`, `Figma`, `Stripe`).
+  - **Arbeitnow API:** Queries `https://arbeitnow.com/api/job-board-api` for German and Remote European tech roles.
+  - **BSJ RSS:** Real-time XML feed parser for `https://berlinstartupjobs.com/feed/`.
 
 ### 3.2 Language & Relevance Filter Engine
 * **`config.py`:** Holds all configurable parameters:
