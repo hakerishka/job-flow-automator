@@ -130,6 +130,14 @@ selected_model = st.sidebar.selectbox(
     index=0
 )
 
+serpapi_env = os.environ.get("SERPAPI_API_KEY", "")
+serpapi_key_input = st.sidebar.text_input(
+    "SerpApi Key (Google Jobs):",
+    value=serpapi_env,
+    type="password",
+    help="Опционально: бесплатный ключ SerpApi (100 поисков/мес) для 100% стабильного парсинга Google Jobs без блокировок."
+)
+
 # Status indicators
 st.sidebar.divider()
 st.sidebar.caption("📁 Статус локальных файлов:")
@@ -569,6 +577,8 @@ with tab_scraper:
             "PYTHONUTF8": "1",
             "PYTHONUNBUFFERED": "1"
         }
+        if serpapi_key_input:
+            sub_env["SERPAPI_API_KEY"] = serpapi_key_input
         
         proc = subprocess.Popen(
             [sys.executable, "-u", str(BASE_DIR / "main.py")],
@@ -592,7 +602,10 @@ with tab_scraper:
         if returncode == 0:
             st.success("🎉 Сбор успешно завершен! Свежий файл сохранен. Перейдите на вкладку '📋 1. Лента вакансий' для просмотра.")
         else:
-            st.error("❌ Сбой при сборе вакансий. Ознакомьтесь с логом выше.")
+            st.error("❌ Сбой при сборе вакансий. Ознакомьтесь с логом ниже.")
+
+        with st.expander("📜 Посмотреть полный лог выполнения (можно скопировать весь текст целиком)", expanded=False):
+            st.text_area("Полный лог терминала:", value="".join(logs), height=350)
 
 
 # ==============================================================================
