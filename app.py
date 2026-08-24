@@ -228,15 +228,40 @@ tab_feed, tab_tailor, tab_scraper, tab_guide = st.tabs([
 with tab_feed:
     st.subheader("📋 Лента собранных вакансий")
     
-    csv_files = glob.glob(str(BASE_DIR / "jobs_clean_*.csv")) + glob.glob(str(BASE_DIR / "berlin_jobs_clean_*.csv")) + glob.glob(str(BASE_DIR / "history" / "*.csv"))
-    csv_files = sorted(list(set(csv_files)), key=os.path.getctime, reverse=True)
+    live_stream_file = BASE_DIR / "jobs_live_stream.csv"
+    if live_stream_file.exists():
+        mtime = os.path.getmtime(live_stream_file)
+        if time.time() - mtime < 1800:
+            c_live1, c_live2 = st.columns([4, 1])
+            with c_live1:
+                st.info("🟢 **Live-поток активен:** вакансии поступают в реальном времени! Вы можете сразу откликаться или скрывать неподходящие.")
+            with c_live2:
+                if st.button("🔄 Обновить список", use_container_width=True):
+                    st.rerun()
+
+    csv_files = []
+    if live_stream_file.exists():
+        csv_files.append(str(live_stream_file))
+    
+    scraped_csvs = glob.glob(str(BASE_DIR / "jobs_clean_*.csv")) + glob.glob(str(BASE_DIR / "berlin_jobs_clean_*.csv")) + glob.glob(str(BASE_DIR / "history" / "*.csv"))
+    scraped_csvs = sorted(list(set(scraped_csvs)), key=os.path.getctime, reverse=True)
+    
+    for f in scraped_csvs:
+        if f not in csv_files:
+            csv_files.append(f)
 
     if not csv_files:
         st.info("ℹ️ В папке пока нет файлов выгрузки (`jobs_clean_*.csv`). Перейдите на вкладку **«🚀 Запуск сбора вакансий»** для первого запуска.")
     else:
+        def format_csv_name(path_str):
+            name = os.path.basename(path_str)
+            if name == "jobs_live_stream.csv":
+                return "🔴 [LIVE STREAM] Текущий живой поток"
+            return name
+
         col_f1, col_f2, col_f3 = st.columns([3, 2, 2])
         with col_f1:
-            selected_csv = st.selectbox("Выберите файл выгрузки:", csv_files, format_func=lambda x: os.path.basename(x))
+            selected_csv = st.selectbox("Выберите файл выгрузки:", csv_files, format_func=format_csv_name)
         with col_f2:
             hide_reviewed = st.checkbox("Скрыть уже отработанные (Reviewed)", value=True)
         with col_f3:
@@ -534,30 +559,40 @@ with tab_scraper:
         st.write(f"• Исключение языка: **{len(config.ACTIVE_LANGUAGE_PATTERNS)} regex-правил**")
 
     if st.button("▶️ Запустить полный цикл сбора", type="primary"):
-        with st.status("Выполняется сбор и обработка вакансий...", expanded=True) as status:
-            st.write("1. Запуск оркестратора `main.py`...")
-            
-            sub_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
-            res = subprocess.run(
-                [sys.executable, str(BASE_DIR / "main.py")],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=sub_env
-            )
-            
-            st.text(res.stdout)
-            if res.stderr:
-                st.caption("Логи выполнения:")
-                st.code(res.stderr)
-
-            if res.returncode == 0:
-                status.update(label="✅ Сбор успешно завершен!", state="complete", expanded=False)
-                st.success("🎉 Свежий CSV сформирован! Перейдите на вкладку '📋 Лента вакансий' для просмотра.")
-            else:
-                status.update(label="❌ Ошибка выполнения", state="error")
-                st.error("Сбой при сборе вакансий.")
+        st.write("🚀 **Запуск скрейпера в реальном времени...**")
+        log_box = st.empty()
+        logs = []
+        
+        sub_env = {
+            **os.environ,
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUTF8": "1",
+            "PYTHONUNBUFFERED": "1"
+        }
+        
+        proc = subprocess.Popen(
+            [sys.executable, "-u", str(BASE_DIR / "main.py")],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=sub_env
+        )
+        
+        for line in iter(proc.stdout.readline, ''):
+            if line:
+                logs.append(line)
+                # Keep last 22 lines streaming in browser
+                log_box.code("".join(logs[-22:]), language="text")
+                
+        proc.stdout.close()
+        returncode = proc.wait()
+        
+        if returncode == 0:
+            st.success("🎉 Сбор успешно завершен! Свежий файл сохранен. Перейдите на вкладку '📋 1. Лента вакансий' для просмотра.")
+        else:
+            st.error("❌ Сбой при сборе вакансий. Ознакомьтесь с логом выше.")
 
 
 # ==============================================================================
