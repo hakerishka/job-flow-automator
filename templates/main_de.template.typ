@@ -36,7 +36,7 @@
   #text(weight: "bold", size: 9.5pt, fill: rgb("#333333"))[#target-role]\
   #v(0.1em)
   #text(size: 8.5pt)[
-    Stadt, Land · #link("mailto:ihre.email@example.com")[ihre.email\@example.com] · +49 123 456789 · #link("https://linkedin.com/in/ihrprofil")[linkedin.com/in/ihrprofil]
+    Stadt, Land · #link("mailto:ihre.email@example.com")[ihre.email\@example.com] · +49 123 4567890 · #link("https://linkedin.com/in/ihrprofil")[linkedin.com/in/ihrprofil] · #link("https://github.com/ihrbenutzername")[github.com/ihrbenutzername]
   ]\
   #text(size: 8pt, fill: rgb("#444444"))[
     Volle Arbeitserlaubnis für Deutschland · Sprachen: Deutsch (Verhandlungssicher), Englisch (Fließend)

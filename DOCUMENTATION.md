@@ -86,11 +86,16 @@ flowchart TD
   - **Arbeitnow API:** Queries `https://arbeitnow.com/api/job-board-api` for German and Remote European tech roles.
   - **BSJ RSS:** Real-time XML feed parser for `https://berlinstartupjobs.com/feed/`.
 
-### 3.2 Language & Relevance Filter Engine
+### 3.2 Language, Geographic & Multi-Track Relevance Filter Engine
 * **`config.py`:** Holds all configurable parameters:
+  - `TARGET_LOCATIONS` & `is_valid_location()`: Strict geographic validator ensuring roles are in Berlin/Potsdam or accessible Remote (EU/Germany/Worldwide), while filtering out non-Berlin hybrid/onsite roles and US/UK-restricted listings.
   - `EXCLUDE_TITLE_KEYWORDS`: Drop Senior/C-level, developer, accounting, or internship roles.
   - `ACTIVE_LANGUAGE_PATTERNS`: Regex patterns that scan descriptions for phrases like `fluent german`, `C1 niveau`, `muttersprache`, `deutschkenntnisse erforderlich`.
-  - `PROFILE_KEYWORDS`: Skill keywords used to calculate a normalized `0–100%` Match Score.
+  - `SCORING_TRACKS` & `evaluate_job_match()`: Multi-track weighted scoring engine with word-boundary regexes, title bonuses, signature tool tiers, negative requirement penalties, and skill tag extraction across 4 tracks:
+    1. *AI & Workflow Automation* (n8n, Make, Zapier, LLM, Prompt Engineering, Solutions Eng).
+    2. *Technical Operations & Deployment* (Deployment, IT Support, Troubleshooting, System Integration).
+    3. *Media, AV & Livestream Operations* (vMix, OBS Studio, NDI, Audiovisual, Webinar/Broadcast).
+    4. *Workplace & Operations Generalist* (Workplace Experience, Front Desk, People Ops).
 
 ### 3.3 Cumulative Review Tracker
 * **`filter_reviewed.py`:**
@@ -178,5 +183,5 @@ Edit `main.typ` (or `templates/main.template.typ`):
 | :--- | :--- | :--- |
 | `LinkedIn 429 Too Many Requests` | Rapid consecutive scraping requests | Increase sleep range in `main.py` (`time.sleep(random.uniform(4.0, 7.0))`). |
 | `Typst CLI Error: font not found` | `Liberation Sans` font not installed on OS | Install Liberation Sans or change font to `"Arial"` in `main.typ`. |
-| `Gemini 503 Service Unavailable` | Model endpoint temporary overload | The built-in retry mechanism will retry with backoff, or switch model to `gemini-3.5-flash-lite` in the sidebar. |
+| `Gemini 503 Service Unavailable` | Model endpoint temporary overload | The built-in retry mechanism will retry with backoff, or switch model to `gemini-3.6-flash` or `gemini-3.1-flash-lite` in the sidebar. |
 | `No jobs retrieved from Ashby/Greenhouse` | Board handle changed or API rate limit | Verify board URL in browser (`https://jobs.ashbyhq.com/{org}`). |

@@ -34,15 +34,18 @@ def get_arbeitnow_jobs():
         if res.status_code == 200:
             data = res.json().get('data', [])
             for job in data:
-                location = str(job.get('location', '')).lower()
-                if 'berlin' in location or 'remote' in location or 'germany' in location or 'deutschland' in location:
+                location = str(job.get('location', '')).strip()
+                title = str(job.get('title', '')).strip()
+                is_rem = job.get('remote', False)
+                
+                if config.is_valid_location(location, title_str=title, is_remote=is_rem):
                     soup = BeautifulSoup(job.get('description', ''), "html.parser")
                     desc = soup.get_text(separator='\n', strip=True)
                     
                     jobs_list.append({
-                        'title': job.get('title'),
+                        'title': title,
                         'company': job.get('company_name'),
-                        'location': job.get('location'),
+                        'location': location or ('Remote (Germany)' if is_rem else 'Berlin, Germany'),
                         'site': 'arbeitnow',
                         'job_url': job.get('url'),
                         'date_posted': job.get('created_at'),
@@ -84,17 +87,33 @@ def get_bsj_rss_jobs():
     return jobs_list
 
 
-def get_greenhouse_vc_jobs():
+GREENHOUSE_BOARDS = [
+    ('Cherry Ventures', 'cherryventures'),
+    ('N26 (Berlin)', 'n26'),
+    ('Celonis (Munich/Remote)', 'celonis'),
+    ('Contentful (Berlin)', 'contentful'),
+    ('Trade Republic', 'traderepublic'),
+    ('Figma', 'figma'),
+    ('Stripe', 'stripe')
+]
+
+ASHBY_BOARDS = [
+    ('n8n (Berlin / Remote)', 'n8n'),
+    ('ElevenLabs', 'elevenlabs'),
+    ('PostHog', 'posthog'),
+    ('Linear', 'linear'),
+    ('Sentry', 'sentry'),
+    ('Perplexity AI', 'perplexity'),
+    ('Langfuse (Berlin)', 'langfuse'),
+    ('Modal Labs', 'modal'),
+    ('OpenAI', 'openai')
+]
+
+
+def get_greenhouse_vc_jobs(boards=None):
     """Fetch jobs from Greenhouse public APIs (VC Portfolios & European Tech Scaleups)."""
-    boards = [
-        ('Cherry Ventures', 'cherryventures'),
-        ('N26 (Berlin)', 'n26'),
-        ('Celonis (Munich/Remote)', 'celonis'),
-        ('Contentful (Berlin)', 'contentful'),
-        ('Trade Republic', 'traderepublic'),
-        ('Figma', 'figma'),
-        ('Stripe', 'stripe')
-    ]
+    if boards is None:
+        boards = GREENHOUSE_BOARDS
     
     jobs_list = []
     for company_name, board_slug in boards:
@@ -103,15 +122,17 @@ def get_greenhouse_vc_jobs():
             if res.status_code == 200:
                 data = res.json().get('jobs', [])
                 for job in data:
-                    location = str(job.get('location', {}).get('name', '')).lower()
-                    if 'berlin' in location or 'remote' in location or location == '' or 'germany' in location or 'deutschland' in location or 'europe' in location:
+                    location_name = str(job.get('location', {}).get('name', '')).strip()
+                    title = str(job.get('title', '')).strip()
+                    
+                    if config.is_valid_location(location_name, title_str=title):
                         soup = BeautifulSoup(job.get('content', ''), "html.parser")
                         desc = soup.get_text(separator='\n', strip=True)
                         
                         jobs_list.append({
-                            'title': job.get('title'),
+                            'title': title,
                             'company': company_name,
-                            'location': job.get('location', {}).get('name', 'Berlin / Remote'),
+                            'location': location_name or 'Berlin, Germany',
                             'site': 'greenhouse',
                             'job_url': job.get('absolute_url'),
                             'date_posted': job.get('updated_at'),
@@ -124,19 +145,10 @@ def get_greenhouse_vc_jobs():
     return jobs_list
 
 
-def get_ashby_vc_jobs():
+def get_ashby_vc_jobs(boards=None):
     """Fetch jobs from AshbyHQ public Posting APIs (AI Leaders & European Scaleups)."""
-    boards = [
-        ('n8n (Berlin / Remote)', 'n8n'),
-        ('ElevenLabs', 'elevenlabs'),
-        ('PostHog', 'posthog'),
-        ('Linear', 'linear'),
-        ('Sentry', 'sentry'),
-        ('Perplexity AI', 'perplexity'),
-        ('Langfuse (Berlin)', 'langfuse'),
-        ('Modal Labs', 'modal'),
-        ('OpenAI', 'openai')
-    ]
+    if boards is None:
+        boards = ASHBY_BOARDS
     
     jobs_list = []
     for company_name, board_slug in boards:
@@ -146,18 +158,24 @@ def get_ashby_vc_jobs():
             if res.status_code == 200:
                 postings = res.json().get('jobs', [])
                 for job in postings:
-                    location = str(job.get('location', '')).lower()
+                    title = str(job.get('title', '')).strip()
+                    location = str(job.get('location', '')).strip()
                     is_remote = job.get('isRemote', False)
-                    if 'berlin' in location or 'remote' in location or 'germany' in location or 'deutschland' in location or is_remote or location == '':
-                        # Extract description
+                    workplace_type = str(job.get('workplaceType', '')).strip()
+                    
+                    # Combine main location with secondary locations
+                    sec_locs = [str(l.get('location', '')) for l in job.get('secondaryLocations', []) if isinstance(l, dict)]
+                    all_locs_str = " | ".join([location] + sec_locs) if sec_locs else location
+                    
+                    if config.is_valid_location(all_locs_str, title_str=title, workplace_type=workplace_type, is_remote=is_remote):
                         desc_html = job.get('descriptionHtml', '') or job.get('descriptionPlain', '')
                         soup = BeautifulSoup(desc_html, "html.parser")
                         desc = soup.get_text(separator='\n', strip=True)
 
                         jobs_list.append({
-                            'title': job.get('title'),
+                            'title': title,
                             'company': company_name,
-                            'location': job.get('location', 'Berlin / Remote'),
+                            'location': all_locs_str or 'Berlin / Remote',
                             'site': 'ashby',
                             'job_url': job.get('jobUrl') or job.get('applyUrl'),
                             'date_posted': job.get('publishedAt'),

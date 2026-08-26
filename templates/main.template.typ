@@ -36,7 +36,7 @@
   #text(weight: "bold", size: 9.5pt, fill: rgb("#333333"))[#target-role]\
   #v(0.1em)
   #text(size: 8.5pt)[
-    City, Country · #link("mailto:your.email@example.com")[your.email\@example.com] · +123 456 7890 · #link("https://linkedin.com/in/yourprofile")[linkedin.com/in/yourprofile]
+    City, Country · #link("mailto:your.email@example.com")[your.email\@example.com] · +123 456 7890 · #link("https://linkedin.com/in/yourprofile")[linkedin.com/in/yourprofile] · #link("https://github.com/yourusername")[github.com/yourusername]
   ]\
   #text(size: 8pt, fill: rgb("#444444"))[
     Full Work Authorization · Languages: English (Fluent), [Language 2]

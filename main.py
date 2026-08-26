@@ -79,13 +79,30 @@ def extract_emails(text):
 
 
 def calculate_match_score(row):
-    """Compute 0-100% profile relevance score based on target skill keywords."""
-    if not config.PROFILE_KEYWORDS:
-        return 0
-    text = f"{row.get('title', '')} {row.get('description', '')}".lower()
-    matched_words = sum(1 for kw in config.PROFILE_KEYWORDS if kw in text)
-    score = int((matched_words / len(config.PROFILE_KEYWORDS)) * 100)
-    return min(score * 3, 100)
+    """Compute 0-100% profile relevance score using multi-track evaluation."""
+    res = config.evaluate_job_match(row.get('title', ''), row.get('description', ''))
+    return res['match_score']
+
+
+def apply_job_scoring(df):
+    """Calculate multi-track match scores, tracks, and skill tags for a DataFrame."""
+    if df.empty:
+        return df
+    
+    scores = []
+    tracks = []
+    skills = []
+    
+    for idx, row in df.iterrows():
+        eval_res = config.evaluate_job_match(row.get('title', ''), row.get('description', ''))
+        scores.append(eval_res['match_score'])
+        tracks.append(eval_res['matched_track'])
+        skills.append(eval_res['matched_skills'])
+        
+    df['match_score'] = scores
+    df['matched_track'] = tracks
+    df['matched_skills'] = skills
+    return df
 
 
 def load_all_historical_reviewed_keys():
@@ -211,12 +228,13 @@ def main():
             (~df_custom['clean_url'].isin(hist_urls)) &
             (~df_custom['dedup_key'].isin(hist_title_comp)) &
             (df_custom['title'].apply(is_suitable_title)) &
+            (df_custom.apply(lambda r: config.is_valid_location(r.get('location', ''), r.get('title', '')), axis=1)) &
             (~df_custom['description'].apply(requires_excluded_language))
         ].copy()
 
         if not valid_custom.empty:
             valid_custom['contact_email'] = valid_custom['description'].apply(extract_emails)
-            valid_custom['match_score'] = valid_custom.apply(calculate_match_score, axis=1)
+            valid_custom = apply_job_scoring(valid_custom)
             accumulated_live_df = valid_custom.sort_values(by='match_score', ascending=False)
             update_live_stream_file(accumulated_live_df)
             print(f"🟢 [LIVE STREAM READY] {len(accumulated_live_df)} instant jobs published to Live Feed!", flush=True)
@@ -274,11 +292,12 @@ def main():
     df_dedup = df_raw.drop_duplicates(subset=['clean_url'], keep='first')
     df_dedup = df_dedup.drop_duplicates(subset=['dedup_key'], keep='first')
 
-    # Instant historical filter + Title filter
+    # Instant historical filter + Title filter + Location filter
     df_filtered = df_dedup[
         (~df_dedup['clean_url'].isin(hist_urls)) &
         (~df_dedup['dedup_key'].isin(hist_title_comp)) &
-        (df_dedup['title'].apply(is_suitable_title))
+        (df_dedup['title'].apply(is_suitable_title)) &
+        (df_dedup.apply(lambda r: config.is_valid_location(r.get('location', ''), r.get('title', '')), axis=1))
     ].copy()
 
     # Fast 5-thread LinkedIn enrichment
@@ -287,7 +306,7 @@ def main():
     # Language regex filter, emails & scoring
     df_final = df_filtered[~df_filtered['description'].apply(requires_excluded_language)].copy()
     df_final['contact_email'] = df_final['description'].apply(extract_emails)
-    df_final['match_score'] = df_final.apply(calculate_match_score, axis=1)
+    df_final = apply_job_scoring(df_final)
     df_final = df_final.sort_values(by='match_score', ascending=False)
 
     print(f"\n📊 Summary:")
@@ -308,5 +327,16 @@ def main():
     print(f"\n🎉 DONE in {elapsed}s! Saved as:\n   📁 {output_filename}", flush=True)
 
 
+LOCK_FILE_PATH = os.path.join(BASE_DIR, ".scraper.lock")
+
 if __name__ == "__main__":
-    main()
+    try:
+        with open(LOCK_FILE_PATH, "w") as f:
+            f.write(str(os.getpid()))
+        main()
+    finally:
+        if os.path.exists(LOCK_FILE_PATH):
+            try:
+                os.remove(LOCK_FILE_PATH)
+            except Exception:
+                pass

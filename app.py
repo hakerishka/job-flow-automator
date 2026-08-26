@@ -15,6 +15,11 @@ from google.genai import types
 from google.genai.errors import APIError
 
 import config
+import importlib
+try:
+    importlib.reload(config)
+except Exception:
+    pass
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -113,21 +118,33 @@ def get_all_reviewed_urls():
 st.sidebar.title("🎯 Job-Flow Control")
 
 api_key_env = os.environ.get("GEMINI_API_KEY", "")
-api_key_input = st.sidebar.text_input(
+api_key_raw = st.sidebar.text_input(
     "Gemini API Key:",
     value=api_key_env,
     type="password",
     help="Ключ считывается из переменной GEMINI_API_KEY или вводится вручную."
 )
+api_key_input = api_key_raw.strip()
+
+if api_key_input:
+    if api_key_input == api_key_env.strip():
+        st.sidebar.caption(f"🔑 Активный ключ: `...{api_key_input[-6:]}` (из переменной GEMINI_API_KEY)")
+    else:
+        st.sidebar.caption(f"🔑 Активный ключ: `...{api_key_input[-6:]}` (введен вручную в поле)")
+else:
+    st.sidebar.caption("🔑 Активный ключ: не задан")
 
 selected_model = st.sidebar.selectbox(
     "Модель Gemini:",
     options=[
+        "gemini-3.6-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-3.1-flash-lite-preview",
         "gemini-3.7-flash",
-        "gemini-3.5-flash-lite",
         "gemini-3.5-flash"
     ],
-    index=0
+    index=0,
+    help="gemini-3.6-flash и 3.1-flash-lite — самые быстрые и стабильные."
 )
 
 # Status indicators
@@ -154,11 +171,24 @@ if "target_role" not in st.session_state:
 if "target_lang" not in st.session_state:
     st.session_state.target_lang = "English"
 
+# Auto-reset chat session if model or API key was changed in sidebar
+if "active_model" not in st.session_state:
+    st.session_state.active_model = selected_model
+elif st.session_state.active_model != selected_model:
+    st.session_state.active_model = selected_model
+    st.session_state.chat = None
+
+if "active_api_key" not in st.session_state:
+    st.session_state.active_api_key = api_key_input
+elif st.session_state.active_api_key != api_key_input:
+    st.session_state.active_api_key = api_key_input
+    st.session_state.chat = None
+
 
 # --- GEMINI CLIENT ---
 @st.cache_resource(show_spinner=False)
 def get_client(api_key: str):
-    return genai.Client(api_key=api_key) if api_key else None
+    return genai.Client(api_key=api_key, http_options={"timeout": 30000}) if api_key else None
 
 client = get_client(api_key_input)
 
@@ -202,15 +232,46 @@ def send_message_with_retry(chat_session, prompt_text, max_retries=3):
         try:
             return chat_session.send_message(prompt_text)
         except APIError as e:
-            if "503" in str(e) or "UNAVAILABLE" in str(e):
+            err_str = str(e)
+            if any(code in err_str for code in ["503", "504", "UNAVAILABLE", "DEADLINE_EXCEEDED"]):
                 if attempt < max_retries - 1:
                     sleep_time = 2 * (attempt + 1)
-                    st.info(f"Сервер временно занят. Повторный запрос через {sleep_time} сек...")
+                    st.info(f"Сервер занят/задержка ответа. Повторный запрос {attempt+2}/{max_retries} через {sleep_time} сек...")
                     time.sleep(sleep_time)
                     continue
+                else:
+                    st.error("⚠️ Модель перегружена или не отвечает. Попробуйте выбрать `gemini-3.6-flash` или `gemini-3.1-flash-lite` в боковой панели.")
             raise e
         except Exception as e:
             raise e
+
+
+def compile_typst_pdf(raw_code: str, active_typ_path: Path, selected_lang: str):
+    """Clean Typst variable declarations, save to tailored.typ, and compile to PDF."""
+    cleaned_code = re.sub(r"^```typst\s*|^```\s*|```$", "", raw_code.strip(), flags=re.MULTILINE)
+    cleaned_code = cleaned_code.replace("\u2011", "-").replace("\u2013", "-").replace("\u2014", "—")
+    cleaned_code = cleaned_code.replace(" | ", " · ")
+
+    # Write to tailored.typ
+    with open(TAILORED_TYP_PATH, "w", encoding="utf-8") as f:
+        f.write(cleaned_code)
+
+    # Output file naming
+    role_match = re.search(r'#let target-role = "(.*?)"', cleaned_code)
+    role_title = role_match.group(1) if role_match else "Custom_Role"
+    role_slug = re.sub(r'[\\/*?:"<>|]', "", role_title).replace(" ", "_").replace("/", "-")
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    lang_suffix = "DE" if selected_lang == "Deutsch" else "EN"
+    output_pdf_name = f"CV_Tailored_{role_slug}_{date_str}_{lang_suffix}.pdf"
+    output_pdf_path = OUTPUT_DIR / output_pdf_name
+
+    compile_res = subprocess.run(
+        ["typst", "compile", str(active_typ_path), str(output_pdf_path)],
+        capture_output=True,
+        text=True
+    )
+    return compile_res, output_pdf_name, output_pdf_path, cleaned_code
 
 
 # --- MAIN TABS ---
@@ -222,23 +283,47 @@ tab_feed, tab_tailor, tab_scraper, tab_guide = st.tabs([
 ])
 
 
+def is_scraper_running():
+    """Accurately check if main.py scraper process is currently executing."""
+    lock_file = BASE_DIR / ".scraper.lock"
+    if not lock_file.exists():
+        return False
+    try:
+        with open(lock_file, "r") as f:
+            content = f.read().strip()
+            if not content:
+                lock_file.unlink(missing_ok=True)
+                return False
+            pid = int(content)
+        import ctypes
+        handle = ctypes.windll.kernel32.OpenProcess(1024, False, pid)
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        else:
+            lock_file.unlink(missing_ok=True)
+            return False
+    except Exception:
+        lock_file.unlink(missing_ok=True)
+        return False
+
+
 # ==============================================================================
 # TAB 1: JOB FEED & REVIEW TRACKER
 # ==============================================================================
 with tab_feed:
     st.subheader("📋 Лента собранных вакансий")
     
-    live_stream_file = BASE_DIR / "jobs_live_stream.csv"
-    if live_stream_file.exists():
-        mtime = os.path.getmtime(live_stream_file)
-        if time.time() - mtime < 1800:
-            c_live1, c_live2 = st.columns([4, 1])
-            with c_live1:
-                st.info("🟢 **Live-поток активен:** вакансии поступают в реальном времени! Вы можете сразу откликаться или скрывать неподходящие.")
-            with c_live2:
-                if st.button("🔄 Обновить список", use_container_width=True):
-                    st.rerun()
+    active_running = is_scraper_running()
+    if active_running:
+        c_live1, c_live2 = st.columns([4, 1])
+        with c_live1:
+            st.info("🟢 **Идет активный сбор вакансий:** новые вакансии поступают в реальном времени!")
+        with c_live2:
+            if st.button("🔄 Обновить список", use_container_width=True):
+                st.rerun()
 
+    live_stream_file = BASE_DIR / "jobs_live_stream.csv"
     csv_files = []
     if live_stream_file.exists():
         csv_files.append(str(live_stream_file))
@@ -256,16 +341,26 @@ with tab_feed:
         def format_csv_name(path_str):
             name = os.path.basename(path_str)
             if name == "jobs_live_stream.csv":
-                return "🔴 [LIVE STREAM] Текущий живой поток"
+                if active_running:
+                    return "🟢 [LIVE STREAM] Идет активный сбор..."
+                elif os.path.exists(path_str):
+                    mtime = os.path.getmtime(path_str)
+                    dt = datetime.fromtimestamp(mtime).strftime("%d.%m %H:%M")
+                    return f"📄 Сводная лента (сохранена {dt})"
+                return "📄 Сводная лента"
             return name
 
-        col_f1, col_f2, col_f3 = st.columns([3, 2, 2])
+        col_f1, col_f2, col_f3, col_f4 = st.columns([3, 2, 2, 2])
         with col_f1:
             selected_csv = st.selectbox("Выберите файл выгрузки:", csv_files, format_func=format_csv_name)
         with col_f2:
             hide_reviewed = st.checkbox("Скрыть уже отработанные (Reviewed)", value=True)
         with col_f3:
             min_score = st.slider("Мин. Match Score:", 0, 100, 20, step=5)
+        with col_f4:
+            scoring_tracks = getattr(config, 'SCORING_TRACKS', {})
+            track_options = ["Все треки"] + list(scoring_tracks.keys())
+            selected_track = st.selectbox("🎯 Фильтр по треку:", track_options)
 
         try:
             df = pd.read_csv(selected_csv)
@@ -280,12 +375,14 @@ with tab_feed:
                 filtered_df = filtered_df[~filtered_df['is_reviewed']]
             if 'match_score' in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df['match_score'] >= min_score]
+            if selected_track != "Все треки" and 'matched_track' in filtered_df.columns:
+                filtered_df = filtered_df[filtered_df['matched_track'] == selected_track]
 
             # Category and Pagination controls
             c_cat, c_per_page = st.columns([3, 1])
             with c_cat:
                 categories = ["Все категории"] + sorted(list(filtered_df['category'].dropna().unique())) if 'category' in filtered_df.columns else []
-                selected_cat = st.selectbox("Фильтр по категории:", categories)
+                selected_cat = st.selectbox("Фильтр по поисковой категории:", categories)
                 if selected_cat != "Все категории":
                     filtered_df = filtered_df[filtered_df['category'] == selected_cat]
             with c_per_page:
@@ -324,19 +421,34 @@ with tab_feed:
                 title = row.get('title', 'Unknown Title')
                 company = row.get('company', 'Unknown Company')
                 category = row.get('category', 'General')
-                score = row.get('match_score', 0)
+                score = int(row.get('match_score', 0)) if pd.notna(row.get('match_score')) else 0
                 url = row.get('job_url', '')
                 date_posted = row.get('date_posted', '')
                 desc = str(row.get('description', ''))
                 email = row.get('contact_email', '')
+                location = row.get('location', 'Berlin, Germany')
+                matched_track = row.get('matched_track', '')
+                matched_skills = row.get('matched_skills', '')
+                
+                # Dynamic fallback for legacy rows
+                if not matched_track or pd.isna(matched_track) or matched_track == 'General Operations':
+                    eval_res = config.evaluate_job_match(title, desc)
+                    matched_track = eval_res['matched_track']
+                    matched_skills = eval_res['matched_skills']
 
                 with st.container(border=True):
                     c_title, c_score = st.columns([5, 1])
                     with c_title:
                         st.markdown(f"### {title}")
-                        st.markdown(f"**🏢 {company}** · 📂 `{category}` · 📅 {date_posted}")
+                        
+                        # Track icon
+                        track_icon = "🤖" if "AI" in str(matched_track) else ("🎥" if "Media" in str(matched_track) else ("🏢" if "Workplace" in str(matched_track) else "⚙️"))
+                        st.markdown(f"**🏢 {company}** · 📍 `{location}` · {track_icon} `{matched_track}` · 📅 {date_posted}")
+                        
+                        if matched_skills and pd.notna(matched_skills):
+                            st.caption(f"🏷️ **Ключевые навыки:** `{matched_skills}`")
                         if email and pd.notna(email):
-                            st.caption(f"📧 Контакт: `{email}`")
+                            st.caption(f"📧 **Контакт:** `{email}`")
                     with c_score:
                         st.metric("Match", f"{score}%")
 
@@ -392,7 +504,16 @@ with tab_feed:
 with tab_tailor:
     st.subheader("⚡ Интерактивная адаптация резюме (ATS Engine)")
 
-    c_lang, c_space = st.columns([2, 3])
+    c_mode, c_lang = st.columns([3, 2])
+    with c_mode:
+        tailor_mode = st.radio(
+            "Режим работы:",
+            options=[
+                "🤖 Автоматически (Gemini API)",
+                "📋 Вручную (AI Studio, ChatGPT, Claude, DeepSeek)"
+            ],
+            horizontal=True
+        )
     with c_lang:
         selected_lang = st.radio(
             "Язык итогового резюме:",
@@ -405,12 +526,12 @@ with tab_tailor:
     active_cv_path = MASTER_CV_DE if selected_lang == "Deutsch" and MASTER_CV_DE.exists() else MASTER_CV_EN
     active_typ_path = MAIN_TYP_DE if selected_lang == "Deutsch" and MAIN_TYP_DE.exists() else MAIN_TYP_EN
 
-    if not api_key_input:
-        st.warning("⚠️ Для генерации укажите Gemini API Key в боковой панели слева.")
-    elif not active_cv_path.exists():
+    if not active_cv_path.exists():
         st.error(f"❌ Не найден файл `{active_cv_path.name}`.")
     elif not active_typ_path.exists():
         st.error(f"❌ Не найден файл `{active_typ_path.name}`.")
+    elif tailor_mode.startswith("🤖") and not api_key_input:
+        st.warning("⚠️ Для автоматической генерации укажите Gemini API Key в боковой панели слева или переключитесь на «📋 Вручную».")
     else:
         jd_input = st.text_area(
             "Текст вакансии (Job Description):",
@@ -419,157 +540,274 @@ with tab_tailor:
             placeholder="Вставьте описание вакансии или нажмите кнопку адаптации в Ленте вакансий..."
         )
 
-        col1, col2 = st.columns([1, 5])
-        with col1:
-            analyze_btn = st.button("🔍 Анализ вакансии (Фаза 1)", type="primary", use_container_width=True)
-        with col2:
-            if st.button("🔄 Сбросить"):
-                st.session_state.chat = None
-                st.session_state.phase_1_response = None
-                st.session_state.jd_text = ""
-                st.rerun()
+        # ----------------------------------------------------------------------
+        # MODE 1: AUTOMATIC VIA GEMINI API
+        # ----------------------------------------------------------------------
+        if tailor_mode.startswith("🤖"):
+            col1, col2 = st.columns([1, 5])
+            with col1:
+                analyze_btn = st.button("🔍 Анализ вакансии (Фаза 1)", type="primary", use_container_width=True)
+            with col2:
+                if st.button("🔄 Сбросить"):
+                    st.session_state.chat = None
+                    st.session_state.phase_1_response = None
+                    st.session_state.jd_text = ""
+                    st.rerun()
 
-        if analyze_btn and jd_input.strip():
-            st.session_state.jd_text = jd_input
-            with st.spinner("Анализирую соответствие Master CV требованиям вакансии..."):
-                try:
-                    sys_inst = get_system_instruction(selected_lang)
-                    st.session_state.chat = client.chats.create(
-                        model=selected_model,
-                        config=types.GenerateContentConfig(
-                            system_instruction=sys_inst,
-                            temperature=0.2,
-                        )
-                    )
-
-                    phase_1_prompt = f"""
-                    <job_description>
-                    {jd_input}
-                    </job_description>
-
-                    --- PHASE 1: GAP ANALYSIS & STRATEGIC CLARIFICATION (НА РУССКОМ ЯЗЫКЕ) ---
-
-                    Сравни <master_cv> и <job_description>. Выведи СТРОГО следующие два блока на русском языке:
-
-                    1. **ATS Анализ соответствия ({'на немецком языке' if selected_lang == 'Deutsch' else 'на английском языке'}):**
-                       - Оценка совпадения (в % от 0 до 100%).
-                       - Совпавшие ключевые слова (навыки, инструменты и процессы из вакансии, которые уже есть в CV).
-                       - Критические пробелы, если есть (требования вакансии, которые отсутствуют или слабо выражены).
-
-                    2. **Уточняющие вопросы (максимум 3 вопроса):**
-                       - Вопрос по недостающему софту/инструментам (уточнить, пишем ли "Working knowledge of [Инструмент]" / "Gute Kenntnisse in [Tool]").
-                       - Вопрос по адаптации софт-скиллов и формулировок под специфику роли.
-                       - Вопрос по тональности (строго корпоративная [Corporate-Safe] или стартап-профиль).
-
-                    Заверши Фазу 1 точной фразой:
-                    "Ответьте на эти вопросы, чтобы я сгенерировал код переменных для tailored.typ."
-                    """
-                    response = send_message_with_retry(st.session_state.chat, phase_1_prompt)
-                    st.session_state.phase_1_response = response.text
-                except Exception as e:
-                    st.error(f"Ошибка Gemini API: {e}")
-
-        # PHASE 2: Clarification & PDF Compilation
-        if st.session_state.phase_1_response:
-            st.divider()
-            st.markdown(st.session_state.phase_1_response)
-
-            user_answers = st.text_area(
-                "Ваши ответы на вопросы (кратко):",
-                height=100,
-                placeholder="1. Да, добавь working knowledge of X. 2. Опыт трансляций подать как hardware uptime. 3. Профиль стартап."
-            )
-
-            if st.button("🚀 Сгенерировать и скомпилировать 1-Page PDF", type="primary"):
-                with st.spinner("Генерация Typst переменных и компиляция PDF..."):
+            if analyze_btn and jd_input.strip():
+                st.session_state.jd_text = jd_input
+                with st.spinner("Анализирую соответствие Master CV требованиям вакансии..."):
                     try:
-                        summary_placeholder = (
-                            "ZUSAMMENFASSUNG_PROFIL (maximal 3-4 Zeilen, hohe Dichte relevanter deutscher ATS-Schlüsselwörter, nur ASCII-Bindestriche)."
-                            if selected_lang == "Deutsch"
-                            else "SUMMARY_PARAGRAPH (3-4 lines maximum, high keyword density, standard ASCII hyphens only)."
+                        sys_inst = get_system_instruction(selected_lang)
+                        st.session_state.chat = client.chats.create(
+                            model=selected_model,
+                            config=types.GenerateContentConfig(
+                                system_instruction=sys_inst,
+                                temperature=0.2,
+                            )
                         )
 
-                        skills_header = (
-                            "- *Kernkompetenzen & Systeme:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Plattformen:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Methoden & Standards:* Method 1, Method 2, Method 3"
-                            if selected_lang == "Deutsch"
-                            else "- *Core Technical & Systems:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Platforms:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Operational Methodologies:* Method 1, Method 2, Method 3"
-                        )
+                        phase_1_prompt = f"""
+                        <job_description>
+                        {jd_input}
+                        </job_description>
 
-                        exp_example = (
-                            "*Positionsbezeichnung 1* — _Unternehmen 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[01/2023 – Heute · Berlin / Remote]\n  - Stichpunkt 1 (Aktionsverb + Kontext + Messbares Ergebnis)\n  - Stichpunkt 2\n  - Stichpunkt 3\n\n  #v(0.25em)\n  *Positionsbezeichnung 2* — _Unternehmen 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[09/2017 – 01/2023 · Standort]\n  - Stichpunkt 1\n  - Stichpunkt 2\n  - Stichpunkt 3"
-                            if selected_lang == "Deutsch"
-                            else "*Role Title 1* — _Company 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Jan 2023 – Present · Berlin / Remote]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3\n\n  #v(0.25em)\n  *Role Title 2* — _Company 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Sep 2017 – Jan 2023 · Location]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3"
-                        )
+                        --- PHASE 1: GAP ANALYSIS & STRATEGIC CLARIFICATION (НА РУССКОМ ЯЗЫКЕ) ---
 
-                        phase_2_prompt = f"""
-                        User Answers:
-                        {user_answers if user_answers.strip() else "Proceed with standard optimal mappings based on Master CV."}
+                        Сравни <master_cv> и <job_description>. Выведи СТРОГО следующие два блока на русском языке:
 
-                        --- PHASE 2: TYPST VARIABLE GENERATION ({'IN GERMAN' if selected_lang == 'Deutsch' else 'IN ENGLISH'}) ---
+                        1. **ATS Анализ соответствия ({'на немецком языке' if selected_lang == 'Deutsch' else 'на английском языке'}):**
+                           - Оценка совпадения (в % от 0 до 100%).
+                           - Совпавшие ключевые слова (навыки, инструменты и процессы из вакансии, которые уже есть в CV).
+                           - Критические пробелы, если есть (требования вакансии, которые отсутствуют или слабо выражены).
 
-                        Generate the exact Typst variable block ready to paste directly into `tailored.typ`:
+                        2. **Уточняющие вопросы (максимум 3 вопроса):**
+                           - Вопрос по недостающему софту/инструментам (уточнить, пишем ли "Working knowledge of [Инструмент]" / "Gute Kenntnisse in [Tool]").
+                           - Вопрос по адаптации софт-скиллов и формулировок под специфику роли.
+                           - Вопрос по тональности (строго корпоративная [Corporate-Safe] или стартап-профиль).
 
-                        #let target-role = "{st.session_state.target_role if st.session_state.target_role else 'EXACT_JOB_TITLE_FROM_JD'}"
-
-                        #let summary = [
-                          {summary_placeholder}
-                        ]
-
-                        #let skills = [
-                          {skills_header}
-                        ]
-
-                        #let experience = [
-                          {exp_example}
-                        ]
+                        Заверши Фазу 1 точной фразой:
+                        "Ответьте на эти вопросы, чтобы я сгенерировал код переменных для tailored.typ."
                         """
-                        response = send_message_with_retry(st.session_state.chat, phase_2_prompt)
-                        raw_code = response.text
-
-                        # Clean code block delimiters
-                        cleaned_code = re.sub(r"^```typst\s*|^```\s*|```$", "", raw_code.strip(), flags=re.MULTILINE)
-                        cleaned_code = cleaned_code.replace("\u2011", "-").replace("\u2013", "-").replace("\u2014", "—")
-                        cleaned_code = cleaned_code.replace(" | ", " · ")
-
-                        # Write to tailored.typ
-                        with open(TAILORED_TYP_PATH, "w", encoding="utf-8") as f:
-                            f.write(cleaned_code)
-
-                        # Output file naming
-                        role_match = re.search(r'#let target-role = "(.*?)"', cleaned_code)
-                        role_title = role_match.group(1) if role_match else "Custom_Role"
-                        role_slug = re.sub(r'[\\/*?:"<>|]', "", role_title).replace(" ", "_").replace("/", "-")
-
-                        date_str = datetime.now().strftime("%Y-%m-%d")
-                        lang_suffix = "DE" if selected_lang == "Deutsch" else "EN"
-                        output_pdf_name = f"CV_Tailored_{role_slug}_{date_str}_{lang_suffix}.pdf"
-                        output_pdf_path = OUTPUT_DIR / output_pdf_name
-
-                        # Compile Typst using active template
-                        compile_res = subprocess.run(
-                            ["typst", "compile", str(active_typ_path), str(output_pdf_path)],
-                            capture_output=True,
-                            text=True
-                        )
-
-                        if compile_res.returncode == 0:
-                            st.success(f"✅ Резюме успешно скомпилировано в 1 страницу ({selected_lang}): `{output_pdf_name}`")
-                            with open(output_pdf_path, "rb") as pdf_file:
-                                st.download_button(
-                                    label=f"📥 Скачать готовый PDF ({selected_lang})",
-                                    data=pdf_file.read(),
-                                    file_name=output_pdf_name,
-                                    mime="application/pdf"
-                                )
-                            with st.expander("Посмотреть сгенерированный код `tailored.typ`"):
-                                st.code(cleaned_code, language="typst")
-                        else:
-                            st.error("Ошибка Typst CLI при компиляции:")
-                            st.code(compile_res.stderr)
-                            st.info("💡 Убедитесь, что утилита `typst` установлена в вашей системе (`winget install --id Typst.Typst` или скачайте с typst.app).")
-
+                        response = send_message_with_retry(st.session_state.chat, phase_1_prompt)
+                        st.session_state.phase_1_response = response.text
                     except Exception as e:
-                        st.error(f"Ошибка API при выполнении Фазы 2: {e}")
+                        st.error(f"Ошибка Gemini API: {e}")
+
+            # PHASE 2: Clarification & PDF Compilation
+            if st.session_state.phase_1_response:
+                st.divider()
+                st.markdown(st.session_state.phase_1_response)
+
+                user_answers = st.text_area(
+                    "Ваши ответы на вопросы (кратко):",
+                    height=100,
+                    placeholder="1. Да, добавь working knowledge of X. 2. Опыт трансляций подать как hardware uptime. 3. Профиль стартап."
+                )
+
+                if st.button("🚀 Сгенерировать и скомпилировать 1-Page PDF", type="primary"):
+                    with st.spinner("Генерация Typst переменных и компиляция PDF..."):
+                        try:
+                            summary_placeholder = (
+                                "ZUSAMMENFASSUNG_PROFIL (maximal 3-4 Zeilen, hohe Dichte relevanter deutscher ATS-Schlüsselwörter, nur ASCII-Bindestriche)."
+                                if selected_lang == "Deutsch"
+                                else "SUMMARY_PARAGRAPH (3-4 lines maximum, high keyword density, standard ASCII hyphens only)."
+                            )
+
+                            skills_header = (
+                                "- *Kernkompetenzen & Systeme:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Plattformen:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Methoden & Standards:* Method 1, Method 2, Method 3"
+                                if selected_lang == "Deutsch"
+                                else "- *Core Technical & Systems:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Platforms:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Operational Methodologies:* Method 1, Method 2, Method 3"
+                            )
+
+                            exp_example = (
+                                "*Positionsbezeichnung 1* — _Unternehmen 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[01/2023 – Heute · Berlin / Remote]\n  - Stichpunkt 1 (Aktionsverb + Kontext + Messbares Ergebnis)\n  - Stichpunkt 2\n  - Stichpunkt 3\n\n  #v(0.25em)\n  *Positionsbezeichnung 2* — _Unternehmen 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[09/2017 – 01/2023 · Standort]\n  - Stichpunkt 1\n  - Stichpunkt 2\n  - Stichpunkt 3"
+                                if selected_lang == "Deutsch"
+                                else "*Role Title 1* — _Company 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Jan 2023 – Present · Berlin / Remote]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3\n\n  #v(0.25em)\n  *Role Title 2* — _Company 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Sep 2017 – Jan 2023 · Location]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3"
+                            )
+
+                            phase_2_prompt = f"""
+                            User Answers:
+                            {user_answers if user_answers.strip() else "Proceed with standard optimal mappings based on Master CV."}
+
+                            --- PHASE 2: TYPST VARIABLE GENERATION ({'IN GERMAN' if selected_lang == 'Deutsch' else 'IN ENGLISH'}) ---
+
+                            Generate the exact Typst variable block ready to paste directly into `tailored.typ`:
+
+                            #let target-role = "{st.session_state.target_role if st.session_state.target_role else 'EXACT_JOB_TITLE_FROM_JD'}"
+
+                            #let summary = [
+                              {summary_placeholder}
+                            ]
+
+                            #let skills = [
+                              {skills_header}
+                            ]
+
+                            #let experience = [
+                              {exp_example}
+                            ]
+                            """
+
+                            # Ensure chat session uses current model and key
+                            if st.session_state.chat is None:
+                                sys_inst = get_system_instruction(selected_lang)
+                                st.session_state.chat = client.chats.create(
+                                    model=selected_model,
+                                    config=types.GenerateContentConfig(
+                                        system_instruction=sys_inst,
+                                        temperature=0.2,
+                                    )
+                                )
+                                # Seed conversation context
+                                if st.session_state.jd_text:
+                                    st.session_state.chat.send_message(f"<job_description>\n{st.session_state.jd_text}\n</job_description>\n\n[Context: Phase 1 gap analysis completed.]")
+
+                            response = send_message_with_retry(st.session_state.chat, phase_2_prompt)
+                            raw_code = response.text
+
+                            compile_res, output_pdf_name, output_pdf_path, cleaned_code = compile_typst_pdf(
+                                raw_code, active_typ_path, selected_lang
+                            )
+
+                            if compile_res.returncode == 0:
+                                st.success(f"✅ Резюме успешно скомпилировано в 1 страницу ({selected_lang}): `{output_pdf_name}`")
+                                with open(output_pdf_path, "rb") as pdf_file:
+                                    st.download_button(
+                                        label=f"📥 Скачать готовый PDF ({selected_lang})",
+                                        data=pdf_file.read(),
+                                        file_name=output_pdf_name,
+                                        mime="application/pdf"
+                                    )
+                                with st.expander("Посмотреть сгенерированный код `tailored.typ`"):
+                                    st.code(cleaned_code, language="typst")
+                            else:
+                                st.error("Ошибка Typst CLI при компиляции:")
+                                st.code(compile_res.stderr)
+                                st.info("💡 Убедитесь, что утилита `typst` установлена в вашей системе (`winget install --id Typst.Typst` или скачайте с typst.app).")
+
+                        except Exception as e:
+                            st.error(f"Ошибка API при выполнении Фазы 2: {e}")
+
+        # ----------------------------------------------------------------------
+        # MODE 2: MANUAL WORKFLOW (NO API KEY REQUIRED)
+        # ----------------------------------------------------------------------
+        else:
+            st.info("💡 **Ручной режим:** скопируйте сформированный промпт в [Google AI Studio](https://aistudio.google.com/), [ChatGPT](https://chatgpt.com/), [Claude](https://claude.ai/) или [DeepSeek](https://chat.deepseek.com/), а затем вставьте сгенерированный код Typst ниже.")
+
+            if jd_input.strip():
+                sys_prompt = get_system_instruction(selected_lang)
+                manual_phase_1_prompt = f"""{sys_prompt}
+
+<job_description>
+{jd_input}
+</job_description>
+
+--- PHASE 1: GAP ANALYSIS & STRATEGIC CLARIFICATION (НА РУССКОМ ЯЗЫКЕ) ---
+
+Сравни <master_cv> и <job_description>. Выведи СТРОГО следующие два блока на русском языке:
+
+1. **ATS Анализ соответствия ({'на немецком языке' if selected_lang == 'Deutsch' else 'на английском языке'}):**
+   - Оценка совпадения (в % от 0 до 100%).
+   - Совпавшие ключевые слова (навыки, инструменты и процессы из вакансии, которые уже есть в CV).
+   - Критические пробелы, если есть (требования вакансии, которые отсутствуют или слабо выражены).
+
+2. **Уточняющие вопросы (максимум 3 вопроса):**
+   - Вопрос по недостающему софту/инструментам (уточнить, пишем ли "Working knowledge of [Инструмент]" / "Gute Kenntnisse in [Tool]").
+   - Вопрос по адаптации софт-скиллов и формулировок под специфику роли.
+   - Вопрос по тональности (строго корпоративная [Corporate-Safe] или стартап-профиль).
+
+Заверши Фазу 1 точной фразой:
+"Ответьте на эти вопросы, чтобы я сгенерировал код переменных для tailored.typ."
+"""
+                st.markdown("### 1️⃣ Скопируйте промпт для Фазы 1 (Анализ вакансии & Вопросы)")
+                st.caption("Нажмите иконку копирования в правом верхнем углу блока и вставьте в любую нейросеть:")
+                st.code(manual_phase_1_prompt, language="markdown")
+
+                st.divider()
+                st.markdown("### 2️⃣ Ответы на вопросы & Промпт для Фазы 2 (Генерация Typst)")
+                manual_answers = st.text_area(
+                    "Ваши ответы на уточняющие вопросы нейросети (необязательно):",
+                    height=80,
+                    placeholder="1. Да, подтверждаю знание инструмента X. 2. Опыт подать с упором на надежность. 3. Профиль стартап."
+                )
+
+                summary_placeholder = (
+                    "ZUSAMMENFASSUNG_PROFIL (maximal 3-4 Zeilen, hohe Dichte relevanter deutscher ATS-Schlüsselwörter, nur ASCII-Bindestriche)."
+                    if selected_lang == "Deutsch"
+                    else "SUMMARY_PARAGRAPH (3-4 lines maximum, high keyword density, standard ASCII hyphens only)."
+                )
+
+                skills_header = (
+                    "- *Kernkompetenzen & Systeme:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Plattformen:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Methoden & Standards:* Method 1, Method 2, Method 3"
+                    if selected_lang == "Deutsch"
+                    else "- *Core Technical & Systems:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Platforms:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Operational Methodologies:* Method 1, Method 2, Method 3"
+                )
+
+                exp_example = (
+                    "*Positionsbezeichnung 1* — _Unternehmen 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[01/2023 – Heute · Berlin / Remote]\n  - Stichpunkt 1 (Aktionsverb + Kontext + Messbares Ergebnis)\n  - Stichpunkt 2\n  - Stichpunkt 3\n\n  #v(0.25em)\n  *Positionsbezeichnung 2* — _Unternehmen 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[09/2017 – 01/2023 · Standort]\n  - Stichpunkt 1\n  - Stichpunkt 2\n  - Stichpunkt 3"
+                    if selected_lang == "Deutsch"
+                    else "*Role Title 1* — _Company 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Jan 2023 – Present · Berlin / Remote]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3\n\n  #v(0.25em)\n  *Role Title 2* — _Company 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Sep 2017 – Jan 2023 · Location]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3"
+                )
+
+                manual_phase_2_prompt = f"""User Answers:
+{manual_answers if manual_answers.strip() else "Proceed with standard optimal mappings based on Master CV."}
+
+--- PHASE 2: TYPST VARIABLE GENERATION ({'IN GERMAN' if selected_lang == 'Deutsch' else 'IN ENGLISH'}) ---
+
+Generate the exact Typst variable block ready to paste directly into `tailored.typ`:
+
+#let target-role = "{st.session_state.target_role if st.session_state.target_role else 'EXACT_JOB_TITLE_FROM_JD'}"
+
+#let summary = [
+  {summary_placeholder}
+]
+
+#let skills = [
+  {skills_header}
+]
+
+#let experience = [
+  {exp_example}
+]
+"""
+                st.caption("Скопируйте этот второй промпт и отправьте его в диалог в вашей нейросети:")
+                st.code(manual_phase_2_prompt, language="markdown")
+
+                st.divider()
+                st.markdown("### 3️⃣ Вставьте код Typst из ответа нейросети и скомпилируйте PDF")
+                pasted_typst_code = st.text_area(
+                    "Вставьте блок кода (`#let target-role = ...`):",
+                    height=200,
+                    placeholder='#let target-role = "Software Engineer"\n\n#let summary = [\n  ...\n]\n\n#let skills = [\n  ...\n]\n\n#let experience = [\n  ...\n]'
+                )
+
+                if st.button("🚀 Скомпилировать 1-Page PDF из вставленного кода", type="primary"):
+                    if not pasted_typst_code.strip():
+                        st.warning("⚠️ Вставьте код Typst перед компиляцией.")
+                    else:
+                        with st.spinner("Компиляция PDF через Typst..."):
+                            compile_res, output_pdf_name, output_pdf_path, cleaned_code = compile_typst_pdf(
+                                pasted_typst_code, active_typ_path, selected_lang
+                            )
+
+                            if compile_res.returncode == 0:
+                                st.success(f"✅ Резюме успешно скомпилировано в 1 страницу ({selected_lang}): `{output_pdf_name}`")
+                                with open(output_pdf_path, "rb") as pdf_file:
+                                    st.download_button(
+                                        label=f"📥 Скачать готовый PDF ({selected_lang})",
+                                        data=pdf_file.read(),
+                                        file_name=output_pdf_name,
+                                        mime="application/pdf"
+                                    )
+                                with st.expander("Посмотреть сохраненный `tailored.typ`"):
+                                    st.code(cleaned_code, language="typst")
+                            else:
+                                st.error("Ошибка Typst CLI при компиляции:")
+                                st.code(compile_res.stderr)
+                                st.info("💡 Проверьте синтаксис переменных Typst или наличие незакрытых скобок `]` / `}`.")
+            else:
+                st.info("Вставьте текст вакансии выше, чтобы сгенерировать готовые промпты.")
 
 
 # ==============================================================================

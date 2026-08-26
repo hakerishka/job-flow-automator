@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "job-flow-automator"
+version = "1.2.0"
+description = "All-in-One Career and Job Search Automation Suite with Multi-Source Scrapers, Deterministic Scoring, and Typst ATS Resume Tailoring"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Georgii Liluashvili", email = "georgii.liluashvili@gmail.com" }
+]
+keywords = ["job-search", "scraping", "automation", "streamlit", "typst", "ats", "resume-tailor", "n8n", "career"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business",
+    "Topic :: Utilities"
+]
+requires-python = ">=3.10"
+dependencies = [
+    "python-jobspy>=1.1.0",
+    "pandas>=2.0.0",
+    "beautifulsoup4>=4.12.0",
+    "requests>=2.31.0",
+    "tqdm>=4.66.0",
+    "openpyxl>=3.1.0",
+    "streamlit>=1.30.0",
+    "google-genai>=1.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-mock>=3.12.0",
+    "pytest-cov>=4.1.0",
+    "flake8>=7.0.0",
+    "black>=24.0.0"
+]
+
+[tool.black]
+line-length = 120
+target-version = ['py310']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

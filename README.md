@@ -1,6 +1,7 @@
 # 🎯 Job-Flow Automator
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![CI Test Suite](https://github.com/hakerishka/job-flow-automator/actions/workflows/ci.yml/badge.svg)](https://github.com/hakerishka/job-flow-automator/actions)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B.svg)](https://streamlit.io/)
 [![Typst](https://img.shields.io/badge/PDF%20Engine-Typst-239DAD.svg)](https://typst.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -8,9 +9,10 @@
 
 An **All-in-One Career & Job Search Automation Suite**:
 1. **Multi-Source Job Aggregator:** Scrapes LinkedIn, Indeed, VC portfolios (AshbyHQ, Greenhouse), and niche tech boards with zero scraping API cost.
-2. **Smart Language & Quality Filter:** Drops jobs requiring local language fluency (German, Spanish, French) via regex, scores relevance (`0-100%`), and extracts hiring manager emails.
-3. **Cumulative Application Tracker:** Seamlessly tracks reviewed/rejected/applied vacancies across Google Sheets and Excel files so you never review the same posting twice.
-4. **AI-Powered ATS Resume Tailor & Typst Compiler:** Analyzes target job requirements via Google Gemini, conducts an interactive 2-phase alignment, and compiles a pixel-perfect, 1-page ATS-compliant PDF in seconds.
+2. **Deterministic Multi-Track Match Scoring:** Evaluates candidates across 4 distinct tracks (*AI & Automation, Tech Ops, Media AV, Workplace Ops*) using regex word boundaries, signature tool weights, and requirement penalties.
+3. **Smart Language & Quality Filter:** Drops jobs requiring local language fluency (German, Spanish, French) via regex, validates geographic bounds (Berlin/Potsdam & EU Remote), and extracts hiring manager emails.
+4. **Cumulative Application Tracker:** Seamlessly tracks reviewed/rejected/applied vacancies across Google Sheets and Excel files so you never review the same posting twice.
+5. **AI-Powered ATS Resume Tailor & Typst Compiler:** Analyzes target job requirements via Google Gemini, conducts an interactive 2-phase alignment, and compiles a pixel-perfect, 1-page ATS-compliant PDF in seconds.
 
 ---
 
@@ -36,14 +38,15 @@ graph TD
 - **Niche Tech Boards:** **Arbeitnow API** & **Berlin Startup Jobs RSS**.
 - **Deep LinkedIn Scraping:** Fast 5-thread concurrent fetcher for full *"About the job"* descriptions.
 
-### 🧹 2. Smart Regex & Language Filtering
-- Automatically catches and excludes hidden local language requirements (*"fluent German"*, *"C1 Niveau"*, *"Muttersprache"*, *"español imprescindible"*).
-- Pre-configured presets in `config.py` for **German, Spanish, French**, or easily extensible to any language.
+### 🎯 2. Deterministic Multi-Track Scoring & Geo Filtering
+- **4 Career Tracks:** AI Automation, Technical Operations & Deployment, Media/AV & Livestream, and Workplace Operations.
+- **Word-Boundary Regexes:** Eliminates false positives (`ai` in `email`, `av` in `have`, `obs` in `obstacle`).
+- **Geographic Validation:** Accepts target hubs (Berlin, Potsdam) and accessible remote (Germany, Europe, Worldwide) while rejecting non-Berlin hybrid/onsite listings.
 
 ### 📋 3. Interactive Dashboard & Application Tracker
-- **Real-Time Live Feed:** View and interact with newly discovered jobs while background queries continue.
-- **1-Click Job Links:** Open postings in new browser tabs instantly.
-- **Review Buttons:** Mark postings as 🟡 *Rejected* or 🔵 *Applied* with automatic persistence to `reviewed.xlsx`.
+- **Real-Time Live Feed:** View and interact with newly discovered jobs with PID process-level activity detection.
+- **Track Filters & Skill Tags:** Filter jobs by career track and view matched skill chips (`n8n`, `vMix`, `Troubleshooting`).
+- **1-Click Job Links & Review Buttons:** Mark postings as 🟡 *Rejected* or 🔵 *Applied* with automatic persistence to `reviewed.xlsx`.
 - **Cumulative Deduplication:** Scans all historical spreadsheets so old vacancies are never shown again.
 
 ### ⚡ 4. AI ATS Resume Tailor & Typst Compiler (Bilingual EN / DE)
@@ -59,11 +62,21 @@ graph TD
 ```text
 job-flow-automator/
 │
+├── .github/
+│   ├── workflows/ci.yml         # ⚙️ GitHub Actions CI pipeline (Ubuntu & Windows, Py 3.10-3.12)
+│   └── ISSUE_TEMPLATE/          # 📝 Bug report and feature request templates
+│
+├── tests/                       # 🧪 Comprehensive Pytest suite (60+ unit & integration tests)
+│   ├── conftest.py              # 🧩 Shared fixtures & API mocks
+│   ├── test_config.py           # 🔍 Location, language regex, and title filter tests
+│   ├── test_scoring.py          # 🎯 Multi-track scoring and penalty tests
+│   ├── test_custom_boards.py    # 🔌 Ashby, Greenhouse, Arbeitnow mock tests
+│   └── test_pipeline.py         # 🧹 URL sanitization, deduplication, and helper tests
+│
 ├── Run_JobFlow.bat              # 🚀 1-Click Windows startup launcher
 ├── app.py                       # 🌐 Unified Streamlit Web Dashboard (Feed + Tailor + Scraper)
-│
-├── main.py                      # 🚀 Standalone Scraper Orchestrator CLI (Live streaming & fast pool)
-├── config.py                    # ⚙️ Search categories, regex rules, candidate keywords, location
+├── main.py                      # 🚀 Scraper Orchestrator CLI with live stream & process lock
+├── config.py                    # ⚙️ Multi-track scoring rules, geo filter, regex patterns
 ├── custom_boards.py             # 🔌 Direct API connectors for Ashby, Greenhouse, Arbeitnow
 ├── filter_reviewed.py           # 🎨 Cumulative historical review filter CLI
 │
@@ -74,9 +87,14 @@ job-flow-automator/
 │   ├── main_de.template.typ     # 📐 Canonical German Typst layout
 │   └── prompt.template.md       # 🧠 2-Phase ATS tailoring system prompt & rules
 │
-├── requirements.txt             # 📦 Python dependencies
-├── .gitignore                   # 🔒 Protects private CVs, PDFs, XLSX, and CSVs
-└── README.md                    # 📖 Documentation
+├── pyproject.toml               # 📦 Standard Python project metadata and tool configs
+├── pytest.ini                   # 🧪 Pytest configuration
+├── requirements.txt             # 📦 Core production dependencies
+├── requirements-dev.txt         # 🛠️ Development & testing dependencies
+├── CONTRIBUTING.md              # 🤝 Contribution guidelines
+├── SECURITY.md                  # 🔒 Security and vulnerability policy
+├── CHANGELOG.md                 # 📜 Semantic version history
+└── README.md                    # 📖 Project documentation
 ```
 
 ---
@@ -96,7 +114,7 @@ pip install -r requirements.txt
 > **Note on Typst:** Install the free, ultra-fast [Typst CLI](https://typst.app/):
 > - **Windows:** `winget install --id Typst.Typst`
 > - **macOS:** `brew install typst`
-> - **Linux:** `cargo install typst-cli` or download binary from [Typst Releases](https://github.com/typst/typst/releases).
+> - **Linux:** `cargo install typst-cli` or download from [Typst Releases](https://github.com/typst/typst/releases).
 
 ### 3. Set Up Your Resume Files
 Copy the templates and customize them with your experience:
@@ -112,23 +130,12 @@ Copy the templates and customize them with your experience:
 
 ---
 
-## 🌍 Adapting for Other Cities & Languages
+## 🧪 Running Tests & Quality Checks
 
-All settings are configured in [`config.py`](config.py):
-
-```python
-# Location settings
-LOCATION = "Madrid, Spain"
-COUNTRY_INDEED = "spain"
-
-# Active language exclusion filter (German, Spanish, French, or empty)
-ACTIVE_LANGUAGE_PATTERNS = SPANISH_REGEX_PATTERNS
-
-# Target search categories
-SEARCH_CATEGORIES = {
-    "Operations & Automation": ["Operations Specialist", "AI Automation Lead"],
-    "Product & Solutions": ["Product Operations", "Solutions Architect"]
-}
+Install development dependencies and run the test suite:
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -v
 ```
 
 ---
