@@ -114,28 +114,68 @@ def get_all_reviewed_urls():
     return marked_urls
 
 
+def is_scraper_running():
+    """Accurately check if main.py scraper process is currently executing."""
+    lock_file = BASE_DIR / ".scraper.lock"
+    if not lock_file.exists():
+        return False
+    try:
+        with open(lock_file, "r") as f:
+            content = f.read().strip()
+            if not content:
+                lock_file.unlink(missing_ok=True)
+                return False
+            pid = int(content)
+        import ctypes
+        handle = ctypes.windll.kernel32.OpenProcess(1024, False, pid)
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        else:
+            lock_file.unlink(missing_ok=True)
+            return False
+    except Exception:
+        lock_file.unlink(missing_ok=True)
+        return False
+
+
 # --- SIDEBAR: SETTINGS & MODEL SELECTION ---
 st.sidebar.title("🎯 Job-Flow Control")
 
+# Language Switcher
+ui_lang_choice = st.sidebar.radio(
+    "🌐 Language / Язык интерфейса:",
+    ["🇬🇧 English", "🇷🇺 Русский"],
+    index=0 if st.session_state.get('ui_lang', 'en') == 'en' else 1,
+    horizontal=True
+)
+is_en = "English" in ui_lang_choice
+st.session_state.ui_lang = 'en' if is_en else 'ru'
+
+def t(en_str: str, ru_str: str) -> str:
+    """Helper to return localized string based on active UI language."""
+    return en_str if is_en else ru_str
+
+
 api_key_env = os.environ.get("GEMINI_API_KEY", "")
 api_key_raw = st.sidebar.text_input(
-    "Gemini API Key:",
+    t("Gemini API Key:", "Ключ Gemini API:"),
     value=api_key_env,
     type="password",
-    help="Ключ считывается из переменной GEMINI_API_KEY или вводится вручную."
+    help=t("Read from GEMINI_API_KEY environment variable or entered manually.", "Ключ считывается из переменной GEMINI_API_KEY или вводится вручную.")
 )
 api_key_input = api_key_raw.strip()
 
 if api_key_input:
     if api_key_input == api_key_env.strip():
-        st.sidebar.caption(f"🔑 Активный ключ: `...{api_key_input[-6:]}` (из переменной GEMINI_API_KEY)")
+        st.sidebar.caption(t(f"🔑 Active Key: `...{api_key_input[-6:]}` (from env)", f"🔑 Активный ключ: `...{api_key_input[-6:]}` (из переменной GEMINI_API_KEY)"))
     else:
-        st.sidebar.caption(f"🔑 Активный ключ: `...{api_key_input[-6:]}` (введен вручную в поле)")
+        st.sidebar.caption(t(f"🔑 Active Key: `...{api_key_input[-6:]}` (manual input)", f"🔑 Активный ключ: `...{api_key_input[-6:]}` (введен вручную в поле)"))
 else:
-    st.sidebar.caption("🔑 Активный ключ: не задан")
+    st.sidebar.caption(t("🔑 Active Key: Not set", "🔑 Активный ключ: не задан"))
 
 selected_model = st.sidebar.selectbox(
-    "Модель Gemini:",
+    t("Gemini Model:", "Модель Gemini:"),
     options=[
         "gemini-3.6-flash",
         "gemini-3.1-flash-lite",
@@ -144,19 +184,19 @@ selected_model = st.sidebar.selectbox(
         "gemini-3.5-flash"
     ],
     index=0,
-    help="gemini-3.6-flash и 3.1-flash-lite — самые быстрые и стабильные."
+    help=t("gemini-3.6-flash and 3.1-flash-lite are the fastest and most stable.", "gemini-3.6-flash и 3.1-flash-lite — самые быстрые и стабильные.")
 )
 
 # Status indicators
 st.sidebar.divider()
-st.sidebar.caption("📁 Статус локальных файлов:")
-st.sidebar.write(f"• Master CV (EN): {'✅ Найден' if MASTER_CV_EN.exists() else '❌ Не найден'}")
-st.sidebar.write(f"• Master CV (DE): {'✅ Найден' if MASTER_CV_DE.exists() else '❌ Не найден'}")
-st.sidebar.write(f"• Typst Main (EN): {'✅ Найден' if MAIN_TYP_EN.exists() else '❌ Не найден'}")
-st.sidebar.write(f"• Typst Main (DE): {'✅ Найден' if MAIN_TYP_DE.exists() else '❌ Не найден'}")
+st.sidebar.caption(t("📁 Local Files Status:", "📁 Статус локальных файлов:"))
+st.sidebar.write(f"• Master CV (EN): {t('✅ Found', '✅ Найден') if MASTER_CV_EN.exists() else t('❌ Not found', '❌ Не найден')}")
+st.sidebar.write(f"• Master CV (DE): {t('✅ Found', '✅ Найден') if MASTER_CV_DE.exists() else t('❌ Not found', '❌ Не найден')}")
+st.sidebar.write(f"• Typst Main (EN): {t('✅ Found', '✅ Найден') if MAIN_TYP_EN.exists() else t('❌ Not found', '❌ Не найден')}")
+st.sidebar.write(f"• Typst Main (DE): {t('✅ Found', '✅ Найден') if MAIN_TYP_DE.exists() else t('❌ Not found', '❌ Не найден')}")
 
 reviewed_count = len(get_all_reviewed_urls())
-st.sidebar.write(f"• Отслежено вакансий: **{reviewed_count}** шт.")
+st.sidebar.write(t(f"• Tracked Postings: **{reviewed_count}**", f"• Отслежено вакансий: **{reviewed_count}** шт."))
 
 
 # --- SESSION STATE ---
@@ -202,9 +242,9 @@ def get_system_instruction(target_lang="English"):
             cv_content = f.read()
 
     lang_rule = (
-        "Execute Phase 1 strictly in RUSSIAN. Execute Phase 2 strictly in GERMAN (valid Typst code, high-density professional German ATS terminology, e.g. '01/2023 – Heute', 'Freiberuflich / Selbstständig')."
+        "Execute Phase 1 strictly in RUSSIAN (if user speaks Russian) or ENGLISH. Execute Phase 2 strictly in GERMAN (valid Typst code, high-density professional German ATS terminology, e.g. '01/2023 – Heute', 'Freiberuflich / Selbstständig')."
         if target_lang == "Deutsch"
-        else "Execute Phase 1 strictly in RUSSIAN. Execute Phase 2 strictly in ENGLISH (valid Typst code)."
+        else "Execute Phase 1 in the user's primary language. Execute Phase 2 strictly in ENGLISH (valid Typst code)."
     )
 
     return f"""
@@ -236,11 +276,11 @@ def send_message_with_retry(chat_session, prompt_text, max_retries=3):
             if any(code in err_str for code in ["503", "504", "UNAVAILABLE", "DEADLINE_EXCEEDED"]):
                 if attempt < max_retries - 1:
                     sleep_time = 2 * (attempt + 1)
-                    st.info(f"Сервер занят/задержка ответа. Повторный запрос {attempt+2}/{max_retries} через {sleep_time} сек...")
+                    st.info(t(f"Server busy. Retrying {attempt+2}/{max_retries} in {sleep_time}s...", f"Сервер занят/задержка ответа. Повторный запрос {attempt+2}/{max_retries} через {sleep_time} сек..."))
                     time.sleep(sleep_time)
                     continue
                 else:
-                    st.error("⚠️ Модель перегружена или не отвечает. Попробуйте выбрать `gemini-3.6-flash` или `gemini-3.1-flash-lite` в боковой панели.")
+                    st.error(t("⚠️ Model is overloaded or unresponsive. Try selecting `gemini-3.6-flash` or `gemini-3.1-flash-lite` in the sidebar.", "⚠️ Модель перегружена или не отвечает. Попробуйте выбрать `gemini-3.6-flash` или `gemini-3.1-flash-lite` в боковой панели."))
             raise e
         except Exception as e:
             raise e
@@ -249,7 +289,7 @@ def send_message_with_retry(chat_session, prompt_text, max_retries=3):
 def compile_typst_pdf(raw_code: str, active_typ_path: Path, selected_lang: str):
     """Clean Typst variable declarations, save to tailored.typ, and compile to PDF."""
     cleaned_code = re.sub(r"^```typst\s*|^```\s*|```$", "", raw_code.strip(), flags=re.MULTILINE)
-    cleaned_code = cleaned_code.replace("\u2011", "-").replace("\u2013", "-").replace("\u2014", "—")
+    cleaned_code = cleaned_code.replace("‑", "-").replace("–", "-").replace("—", "—")
     cleaned_code = cleaned_code.replace(" | ", " · ")
 
     # Write to tailored.typ
@@ -276,51 +316,26 @@ def compile_typst_pdf(raw_code: str, active_typ_path: Path, selected_lang: str):
 
 # --- MAIN TABS ---
 tab_feed, tab_tailor, tab_scraper, tab_guide = st.tabs([
-    "📋 1. Лента вакансий & Трекер",
-    "⚡ 2. ATS Resume Tailor",
-    "🚀 3. Запуск сбора вакансий",
-    "📖 4. Инструкция & Настройки"
+    t("📋 1. Job Feed & Tracker", "📋 1. Лента вакансий & Трекер"),
+    t("⚡ 2. ATS Resume Tailor", "⚡ 2. ATS Resume Tailor"),
+    t("🚀 3. Job Scraper", "🚀 3. Запуск сбора вакансий"),
+    t("📖 4. Guide & Settings", "📖 4. Инструкция & Настройки")
 ])
-
-
-def is_scraper_running():
-    """Accurately check if main.py scraper process is currently executing."""
-    lock_file = BASE_DIR / ".scraper.lock"
-    if not lock_file.exists():
-        return False
-    try:
-        with open(lock_file, "r") as f:
-            content = f.read().strip()
-            if not content:
-                lock_file.unlink(missing_ok=True)
-                return False
-            pid = int(content)
-        import ctypes
-        handle = ctypes.windll.kernel32.OpenProcess(1024, False, pid)
-        if handle:
-            ctypes.windll.kernel32.CloseHandle(handle)
-            return True
-        else:
-            lock_file.unlink(missing_ok=True)
-            return False
-    except Exception:
-        lock_file.unlink(missing_ok=True)
-        return False
 
 
 # ==============================================================================
 # TAB 1: JOB FEED & REVIEW TRACKER
 # ==============================================================================
 with tab_feed:
-    st.subheader("📋 Лента собранных вакансий")
+    st.subheader(t("📋 Discovered Job Feed", "📋 Лента собранных вакансий"))
     
     active_running = is_scraper_running()
     if active_running:
         c_live1, c_live2 = st.columns([4, 1])
         with c_live1:
-            st.info("🟢 **Идет активный сбор вакансий:** новые вакансии поступают в реальном времени!")
+            st.info(t("🟢 **Active Scraping in Progress:** New vacancies are arriving in real-time!", "🟢 **Идет активный сбор вакансий:** новые вакансии поступают в реальном времени!"))
         with c_live2:
-            if st.button("🔄 Обновить список", use_container_width=True):
+            if st.button(t("🔄 Refresh List", "🔄 Обновить список"), use_container_width=True):
                 st.rerun()
 
     live_stream_file = BASE_DIR / "jobs_live_stream.csv"
@@ -336,31 +351,31 @@ with tab_feed:
             csv_files.append(f)
 
     if not csv_files:
-        st.info("ℹ️ В папке пока нет файлов выгрузки (`jobs_clean_*.csv`). Перейдите на вкладку **«🚀 Запуск сбора вакансий»** для первого запуска.")
+        st.info(t("ℹ️ No job datasets found (`jobs_clean_*.csv`). Go to **'🚀 3. Job Scraper'** tab to start your first search.", "ℹ️ В папке пока нет файлов выгрузки (`jobs_clean_*.csv`). Перейдите на вкладку **«🚀 Запуск сбора вакансий»** для первого запуска."))
     else:
         def format_csv_name(path_str):
             name = os.path.basename(path_str)
             if name == "jobs_live_stream.csv":
                 if active_running:
-                    return "🟢 [LIVE STREAM] Идет активный сбор..."
+                    return t("🟢 [LIVE STREAM] Scraping active...", "🟢 [LIVE STREAM] Идет активный сбор...")
                 elif os.path.exists(path_str):
                     mtime = os.path.getmtime(path_str)
                     dt = datetime.fromtimestamp(mtime).strftime("%d.%m %H:%M")
-                    return f"📄 Сводная лента (сохранена {dt})"
-                return "📄 Сводная лента"
+                    return t(f"📄 Summary Feed (updated {dt})", f"📄 Сводная лента (сохранена {dt})")
+                return t("📄 Summary Feed (jobs_live_stream.csv)", "📄 Сводная лента (jobs_live_stream.csv)")
             return name
 
         col_f1, col_f2, col_f3, col_f4 = st.columns([3, 2, 2, 2])
         with col_f1:
-            selected_csv = st.selectbox("Выберите файл выгрузки:", csv_files, format_func=format_csv_name)
+            selected_csv = st.selectbox(t("Select dataset file:", "Выберите файл выгрузки:"), csv_files, format_func=format_csv_name)
         with col_f2:
-            hide_reviewed = st.checkbox("Скрыть уже отработанные (Reviewed)", value=True)
+            hide_reviewed = st.checkbox(t("Hide already reviewed", "Скрыть уже отработанные (Reviewed)"), value=True)
         with col_f3:
-            min_score = st.slider("Мин. Match Score:", 0, 100, 20, step=5)
+            min_score = st.slider(t("Min. Match Score:", "Мин. Match Score:"), 0, 100, 20, step=5)
         with col_f4:
             scoring_tracks = getattr(config, 'SCORING_TRACKS', {})
-            track_options = ["Все треки"] + list(scoring_tracks.keys())
-            selected_track = st.selectbox("🎯 Фильтр по треку:", track_options)
+            track_options = [t("All Tracks", "Все треки")] + list(scoring_tracks.keys())
+            selected_track = st.selectbox(t("🎯 Filter by track:", "🎯 Фильтр по треку:"), track_options)
 
         try:
             df = pd.read_csv(selected_csv)
@@ -375,18 +390,20 @@ with tab_feed:
                 filtered_df = filtered_df[~filtered_df['is_reviewed']]
             if 'match_score' in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df['match_score'] >= min_score]
-            if selected_track != "Все треки" and 'matched_track' in filtered_df.columns:
+            if selected_track not in ["All Tracks", "Все треки"] and 'matched_track' in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df['matched_track'] == selected_track]
 
             # Category and Pagination controls
             c_cat, c_per_page = st.columns([3, 1])
             with c_cat:
-                categories = ["Все категории"] + sorted(list(filtered_df['category'].dropna().unique())) if 'category' in filtered_df.columns else []
-                selected_cat = st.selectbox("Фильтр по поисковой категории:", categories)
-                if selected_cat != "Все категории":
+                raw_cats = sorted(list(filtered_df['category'].dropna().unique())) if 'category' in filtered_df.columns else []
+                all_cat_label = t("All Categories", "Все категории")
+                categories = [all_cat_label] + raw_cats
+                selected_cat = st.selectbox(t("Filter by search category:", "Фильтр по поисковой категории:"), categories)
+                if selected_cat != all_cat_label:
                     filtered_df = filtered_df[filtered_df['category'] == selected_cat]
             with c_per_page:
-                page_size = st.selectbox("На странице:", [15, 25, 50, 100], index=1)
+                page_size = st.selectbox(t("Per page:", "На странице:"), [15, 25, 50, 100], index=1)
 
             total_jobs = len(filtered_df)
             total_pages = max(1, (total_jobs + page_size - 1) // page_size)
@@ -399,17 +416,20 @@ with tab_feed:
             # Pagination bar
             p_col1, p_col2, p_col3, p_col4 = st.columns([1, 2, 1, 2])
             with p_col1:
-                if st.button("◀ Назад", disabled=(st.session_state.current_page <= 1), use_container_width=True):
+                if st.button(t("◀ Previous", "◀ Назад"), disabled=(st.session_state.current_page <= 1), use_container_width=True):
                     st.session_state.current_page -= 1
                     st.rerun()
             with p_col2:
-                st.markdown(f"<p style='text-align: center; margin-top: 6px;'><b>Страница {st.session_state.current_page} из {total_pages}</b> (всего: {total_jobs})</p>", unsafe_allow_html=True)
+                page_info = t(f"Page {st.session_state.current_page} of {total_pages}", f"Страница {st.session_state.current_page} из {total_pages}")
+                st.markdown(f"<p style='text-align: center; margin-top: 6px;'><b>{page_info}</b> ({t('total', 'всего')}: {total_jobs})</p>", unsafe_allow_html=True)
             with p_col3:
-                if st.button("Вперед ▶", disabled=(st.session_state.current_page >= total_pages), use_container_width=True):
+                if st.button(t("Next ▶", "Вперед ▶"), disabled=(st.session_state.current_page >= total_pages), use_container_width=True):
                     st.session_state.current_page += 1
                     st.rerun()
             with p_col4:
-                st.caption(f"Показано {min(total_jobs, (st.session_state.current_page - 1) * page_size + 1)}–{min(total_jobs, st.session_state.current_page * page_size)} из {total_jobs}")
+                item_start = min(total_jobs, (st.session_state.current_page - 1) * page_size + 1)
+                item_end = min(total_jobs, st.session_state.current_page * page_size)
+                st.caption(t(f"Showing {item_start}–{item_end} of {total_jobs}", f"Показано {item_start}–{item_end} из {total_jobs}"))
 
             # Slice df for active page
             start_idx = (st.session_state.current_page - 1) * page_size
@@ -424,7 +444,11 @@ with tab_feed:
                 score = int(row.get('match_score', 0)) if pd.notna(row.get('match_score')) else 0
                 url = row.get('job_url', '')
                 date_posted = row.get('date_posted', '')
-                desc = str(row.get('description', ''))
+                
+                # Robust description sanitization (no literal 'nan')
+                raw_desc = row.get('description', '')
+                desc = "" if (pd.isna(raw_desc) or str(raw_desc).strip().lower() in ['nan', 'none', '']) else str(raw_desc).strip()
+                
                 email = row.get('contact_email', '')
                 location = row.get('location', 'Berlin, Germany')
                 matched_track = row.get('matched_track', '')
@@ -446,77 +470,89 @@ with tab_feed:
                         st.markdown(f"**🏢 {company}** · 📍 `{location}` · {track_icon} `{matched_track}` · 📅 {date_posted}")
                         
                         if matched_skills and pd.notna(matched_skills):
-                            st.caption(f"🏷️ **Ключевые навыки:** `{matched_skills}`")
+                            st.caption(f"🏷️ **{t('Key skills:', 'Ключевые навыки:')}** `{matched_skills}`")
                         if email and pd.notna(email):
-                            st.caption(f"📧 **Контакт:** `{email}`")
+                            st.caption(f"📧 **{t('Contact:', 'Контакт:')}** `{email}`")
                     with c_score:
-                        st.metric("Match", f"{score}%")
+                        st.metric(t("Match", "Match"), f"{score}%")
 
                     # Action buttons in one clean line
                     b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns([2, 2, 2, 2, 2])
                     
                     with b_col1:
                         if url:
-                            st.link_button("🔗 Открыть", url, help="Открыть страницу вакансии в новой вкладке")
+                            st.link_button(t("🔗 Open", "🔗 Открыть"), url, help=t("Open original job page in a new tab", "Открыть страницу вакансии в новой вкладке"))
                         else:
-                            st.button("Нет ссылки", disabled=True, key=f"nourl_{idx}")
+                            st.button(t("No URL", "Нет ссылки"), disabled=True, key=f"nourl_{idx}")
 
                     with b_col2:
-                        if st.button("🇬🇧 CV (EN)", key=f"tailor_en_{idx}", type="primary", help="Адаптировать резюме на английском"):
+                        if st.button("🇬🇧 CV (EN)", key=f"tailor_en_{idx}", type="primary", help=t("Tailor resume in English", "Адаптировать резюме на английском")):
                             st.session_state.jd_text = desc
                             st.session_state.target_role = title
                             st.session_state.target_lang = "English"
                             st.session_state.phase_1_response = None
                             st.session_state.chat = None
-                            st.toast(f"Вакансия '{title}' (EN) скопирована в ATS Tailor!", icon="🇬🇧")
+                            if not desc:
+                                st.toast(t(f"Role '{title}' set in ATS Tailor. Please paste JD description from original page!", f"Вакансия '{title}' выбрана. Вставьте описание в ATS Tailor!"), icon="⚠️")
+                            else:
+                                st.toast(t(f"Job '{title}' (EN) copied to ATS Tailor!", f"Вакансия '{title}' (EN) скопирована в ATS Tailor!"), icon="🇬🇧")
 
                     with b_col3:
-                        if st.button("🇩🇪 CV (DE)", key=f"tailor_de_{idx}", help="Адаптировать резюме на немецком"):
+                        if st.button("🇩🇪 CV (DE)", key=f"tailor_de_{idx}", help=t("Tailor resume in German", "Адаптировать резюме на немецком")):
                             st.session_state.jd_text = desc
                             st.session_state.target_role = title
                             st.session_state.target_lang = "Deutsch"
                             st.session_state.phase_1_response = None
                             st.session_state.chat = None
-                            st.toast(f"Вакансия '{title}' (DE) скопирована в ATS Tailor!", icon="🇩🇪")
+                            if not desc:
+                                st.toast(t(f"Role '{title}' set in ATS Tailor. Please paste JD description from original page!", f"Вакансия '{title}' выбрана. Вставьте описание в ATS Tailor!"), icon="⚠️")
+                            else:
+                                st.toast(t(f"Job '{title}' (DE) copied to ATS Tailor!", f"Вакансия '{title}' (DE) скопирована в ATS Tailor!"), icon="🇩🇪")
 
                     with b_col4:
-                        if st.button("🟡 Пропуск", key=f"reject_{idx}", help="Пометить желтым и скрыть"):
+                        if st.button(t("🟡 Skip", "🟡 Пропуск"), key=f"reject_{idx}", help=t("Mark as Rejected and hide from feed", "Пометить желтым и скрыть")):
                             mark_job_in_reviewed_file(url, title, company, status="Rejected", color="YELLOW")
-                            st.toast(f"Отмечено как 'Не подходит': {title}", icon="🟡")
+                            st.toast(t(f"Marked as skipped: {title}", f"Отмечено как 'Не подходит': {title}"), icon="🟡")
                             st.rerun()
 
                     with b_col5:
-                        if st.button("🔵 Отклик", key=f"apply_{idx}", help="Пометить синим как 'Откликнулся'"):
+                        if st.button(t("🔵 Applied", "🔵 Отклик"), key=f"apply_{idx}", help=t("Mark as Applied in tracking spreadsheet", "Пометить синим как 'Откликнулся'")):
                             mark_job_in_reviewed_file(url, title, company, status="Applied", color="BLUE")
-                            st.toast(f"Отмечено как 'Отклик': {title}", icon="🔵")
+                            st.toast(t(f"Marked as Applied: {title}", f"Отмечено как 'Отклик': {title}"), icon="🔵")
                             st.rerun()
 
-                    with st.expander("👁️ Посмотреть описание вакансии"):
-                        st.write(desc)
+                    with st.expander(t("👁️ View Job Description", "👁️ Посмотреть описание вакансии")):
+                        if desc:
+                            st.markdown(desc)
+                        else:
+                            st.info(t(
+                                "ℹ️ Detailed description was not available during initial scraping. Click **'🔗 Open'** to view the full job post on the employer's website, or paste the text directly into the ATS Resume Tailor tab.",
+                                "ℹ️ Описание не было получено при первичном сборе. Нажмите **'🔗 Открыть'**, чтобы посмотреть вакансию на сайте работодателя, или вставьте текст описания во вкладке ATS Resume Tailor."
+                            ))
 
         except Exception as e:
-            st.error(f"Ошибка загрузки CSV: {e}")
+            st.error(t(f"Error reading CSV: {e}", f"Ошибка загрузки CSV: {e}"))
 
 
 # ==============================================================================
 # TAB 2: ATS RESUME TAILOR ENGINE
 # ==============================================================================
 with tab_tailor:
-    st.subheader("⚡ Интерактивная адаптация резюме (ATS Engine)")
+    st.subheader(t("⚡ Interactive ATS Resume Tailor Engine", "⚡ Интерактивная адаптация резюме (ATS Engine)"))
 
     c_mode, c_lang = st.columns([3, 2])
     with c_mode:
         tailor_mode = st.radio(
-            "Режим работы:",
+            t("Execution Mode:", "Режим работы:"),
             options=[
-                "🤖 Автоматически (Gemini API)",
-                "📋 Вручную (AI Studio, ChatGPT, Claude, DeepSeek)"
+                t("🤖 Automated (Gemini API)", "🤖 Автоматически (Gemini API)"),
+                t("📋 Manual (AI Studio, ChatGPT, Claude, DeepSeek)", "📋 Вручную (AI Studio, ChatGPT, Claude, DeepSeek)")
             ],
             horizontal=True
         )
     with c_lang:
         selected_lang = st.radio(
-            "Язык итогового резюме:",
+            t("Target Resume Language:", "Язык итогового резюме:"),
             options=["English", "Deutsch"],
             index=0 if st.session_state.target_lang == "English" else 1,
             horizontal=True
@@ -527,17 +563,17 @@ with tab_tailor:
     active_typ_path = MAIN_TYP_DE if selected_lang == "Deutsch" and MAIN_TYP_DE.exists() else MAIN_TYP_EN
 
     if not active_cv_path.exists():
-        st.error(f"❌ Не найден файл `{active_cv_path.name}`.")
+        st.error(t(f"❌ Master CV file not found: `{active_cv_path.name}`.", f"❌ Не найден файл `{active_cv_path.name}`."))
     elif not active_typ_path.exists():
-        st.error(f"❌ Не найден файл `{active_typ_path.name}`.")
+        st.error(t(f"❌ Typst template file not found: `{active_typ_path.name}`.", f"❌ Не найден файл `{active_typ_path.name}`."))
     elif tailor_mode.startswith("🤖") and not api_key_input:
-        st.warning("⚠️ Для автоматической генерации укажите Gemini API Key в боковой панели слева или переключитесь на «📋 Вручную».")
+        st.warning(t("⚠️ To use automated generation, provide your Gemini API Key in the left sidebar or switch to '📋 Manual'.", "⚠️ Для автоматической генерации укажите Gemini API Key в боковой панели слева или переключитесь на «📋 Вручную»."))
     else:
         jd_input = st.text_area(
-            "Текст вакансии (Job Description):",
+            t("Job Description (JD):", "Текст вакансии (Job Description):"),
             value=st.session_state.jd_text,
             height=180,
-            placeholder="Вставьте описание вакансии или нажмите кнопку адаптации в Ленте вакансий..."
+            placeholder=t("Paste target job description or click CV (EN)/CV (DE) button in Job Feed...", "Вставьте описание вакансии или нажмите кнопку адаптации в Ленте вакансий...")
         )
 
         # ----------------------------------------------------------------------
@@ -546,9 +582,9 @@ with tab_tailor:
         if tailor_mode.startswith("🤖"):
             col1, col2 = st.columns([1, 5])
             with col1:
-                analyze_btn = st.button("🔍 Анализ вакансии (Фаза 1)", type="primary", use_container_width=True)
+                analyze_btn = st.button(t("🔍 Analyze Job (Phase 1)", "🔍 Анализ вакансии (Фаза 1)"), type="primary", use_container_width=True)
             with col2:
-                if st.button("🔄 Сбросить"):
+                if st.button(t("🔄 Reset", "🔄 Сбросить")):
                     st.session_state.chat = None
                     st.session_state.phase_1_response = None
                     st.session_state.jd_text = ""
@@ -556,7 +592,7 @@ with tab_tailor:
 
             if analyze_btn and jd_input.strip():
                 st.session_state.jd_text = jd_input
-                with st.spinner("Анализирую соответствие Master CV требованиям вакансии..."):
+                with st.spinner(t("Analyzing Master CV alignment against job requirements...", "Анализирую соответствие Master CV требованиям вакансии...")):
                     try:
                         sys_inst = get_system_instruction(selected_lang)
                         st.session_state.chat = client.chats.create(
@@ -572,27 +608,27 @@ with tab_tailor:
                         {jd_input}
                         </job_description>
 
-                        --- PHASE 1: GAP ANALYSIS & STRATEGIC CLARIFICATION (НА РУССКОМ ЯЗЫКЕ) ---
+                        --- PHASE 1: GAP ANALYSIS & STRATEGIC CLARIFICATION ---
 
-                        Сравни <master_cv> и <job_description>. Выведи СТРОГО следующие два блока на русском языке:
+                        Compare <master_cv> and <job_description>. Provide STRICTLY these two blocks:
 
-                        1. **ATS Анализ соответствия ({'на немецком языке' if selected_lang == 'Deutsch' else 'на английском языке'}):**
-                           - Оценка совпадения (в % от 0 до 100%).
-                           - Совпавшие ключевые слова (навыки, инструменты и процессы из вакансии, которые уже есть в CV).
-                           - Критические пробелы, если есть (требования вакансии, которые отсутствуют или слабо выражены).
+                        1. **ATS Match Analysis ({'in German' if selected_lang == 'Deutsch' else 'in English'}):**
+                           - Match Score (% from 0 to 100%).
+                           - Matched keywords & skills found in Master CV.
+                           - Critical gaps or missing domain requirements.
 
-                        2. **Уточняющие вопросы (максимум 3 вопроса):**
-                           - Вопрос по недостающему софту/инструментам (уточнить, пишем ли "Working knowledge of [Инструмент]" / "Gute Kenntnisse in [Tool]").
-                           - Вопрос по адаптации софт-скиллов и формулировок под специфику роли.
-                           - Вопрос по тональности (строго корпоративная [Corporate-Safe] или стартап-профиль).
+                        2. **Strategic Clarification Questions (Maximum 3 questions):**
+                           - Missing software/tools (clarify whether to add working knowledge).
+                           - Soft-skills framing and domain adjustments.
+                           - Tone preference (Corporate-Safe enterprise vs High-Pace Startup).
 
-                        Заверши Фазу 1 точной фразой:
-                        "Ответьте на эти вопросы, чтобы я сгенерировал код переменных для tailored.typ."
+                        End Phase 1 with the exact phrase:
+                        "Answer these questions to generate the tailored.typ code variables."
                         """
                         response = send_message_with_retry(st.session_state.chat, phase_1_prompt)
                         st.session_state.phase_1_response = response.text
                     except Exception as e:
-                        st.error(f"Ошибка Gemini API: {e}")
+                        st.error(t(f"Gemini API Error: {e}", f"Ошибка Gemini API: {e}"))
 
             # PHASE 2: Clarification & PDF Compilation
             if st.session_state.phase_1_response:
@@ -600,13 +636,13 @@ with tab_tailor:
                 st.markdown(st.session_state.phase_1_response)
 
                 user_answers = st.text_area(
-                    "Ваши ответы на вопросы (кратко):",
+                    t("Your answers to clarification questions (briefly):", "Ваши ответы на вопросы (кратко):"),
                     height=100,
-                    placeholder="1. Да, добавь working knowledge of X. 2. Опыт трансляций подать как hardware uptime. 3. Профиль стартап."
+                    placeholder=t("1. Yes, add working knowledge of X. 2. Frame broadcast experience as high-uptime IT systems. 3. Startup tone.", "1. Да, добавь working knowledge of X. 2. Опыт трансляций подать как hardware uptime. 3. Профиль стартап.")
                 )
 
-                if st.button("🚀 Сгенерировать и скомпилировать 1-Page PDF", type="primary"):
-                    with st.spinner("Генерация Typst переменных и компиляция PDF..."):
+                if st.button(t("🚀 Generate & Compile 1-Page PDF", "🚀 Сгенерировать и скомпилировать 1-Page PDF"), type="primary"):
+                    with st.spinner(t("Generating Typst variables & compiling PDF...", "Генерация Typst переменных и компиляция PDF...")):
                         try:
                             summary_placeholder = (
                                 "ZUSAMMENFASSUNG_PROFIL (maximal 3-4 Zeilen, hohe Dichte relevanter deutscher ATS-Schlüsselwörter, nur ASCII-Bindestriche)."
@@ -649,7 +685,6 @@ with tab_tailor:
                             ]
                             """
 
-                            # Ensure chat session uses current model and key
                             if st.session_state.chat is None:
                                 sys_inst = get_system_instruction(selected_lang)
                                 st.session_state.chat = client.chats.create(
@@ -659,7 +694,6 @@ with tab_tailor:
                                         temperature=0.2,
                                     )
                                 )
-                                # Seed conversation context
                                 if st.session_state.jd_text:
                                     st.session_state.chat.send_message(f"<job_description>\n{st.session_state.jd_text}\n</job_description>\n\n[Context: Phase 1 gap analysis completed.]")
 
@@ -671,29 +705,29 @@ with tab_tailor:
                             )
 
                             if compile_res.returncode == 0:
-                                st.success(f"✅ Резюме успешно скомпилировано в 1 страницу ({selected_lang}): `{output_pdf_name}`")
+                                st.success(t(f"✅ 1-Page PDF Resume successfully compiled ({selected_lang}): `{output_pdf_name}`", f"✅ Резюме успешно скомпилировано в 1 страницу ({selected_lang}): `{output_pdf_name}`"))
                                 with open(output_pdf_path, "rb") as pdf_file:
                                     st.download_button(
-                                        label=f"📥 Скачать готовый PDF ({selected_lang})",
+                                        label=t(f"📥 Download 1-Page PDF ({selected_lang})", f"📥 Скачать готовый PDF ({selected_lang})"),
                                         data=pdf_file.read(),
                                         file_name=output_pdf_name,
                                         mime="application/pdf"
                                     )
-                                with st.expander("Посмотреть сгенерированный код `tailored.typ`"):
+                                with st.expander(t("View generated `tailored.typ` code", "Посмотреть сгенерированный код `tailored.typ`")):
                                     st.code(cleaned_code, language="typst")
                             else:
-                                st.error("Ошибка Typst CLI при компиляции:")
+                                st.error(t("Typst CLI Compilation Error:", "Ошибка Typst CLI при компиляции:"))
                                 st.code(compile_res.stderr)
-                                st.info("💡 Убедитесь, что утилита `typst` установлена в вашей системе (`winget install --id Typst.Typst` или скачайте с typst.app).")
+                                st.info(t("💡 Ensure `typst` CLI is installed (`winget install --id Typst.Typst` or visit typst.app).", "💡 Убедитесь, что утилита `typst` установлена в вашей системе (`winget install --id Typst.Typst` или скачайте с typst.app)."))
 
                         except Exception as e:
-                            st.error(f"Ошибка API при выполнении Фазы 2: {e}")
+                            st.error(t(f"API Error in Phase 2: {e}", f"Ошибка API при выполнении Фазы 2: {e}"))
 
         # ----------------------------------------------------------------------
         # MODE 2: MANUAL WORKFLOW (NO API KEY REQUIRED)
         # ----------------------------------------------------------------------
         else:
-            st.info("💡 **Ручной режим:** скопируйте сформированный промпт в [Google AI Studio](https://aistudio.google.com/), [ChatGPT](https://chatgpt.com/), [Claude](https://claude.ai/) или [DeepSeek](https://chat.deepseek.com/), а затем вставьте сгенерированный код Typst ниже.")
+            st.info(t("💡 **Manual Mode:** Copy the generated prompt into [Google AI Studio](https://aistudio.google.com/), [ChatGPT](https://chatgpt.com/), [Claude](https://claude.ai/), or [DeepSeek](https://chat.deepseek.com/), then paste the returned Typst code below.", "💡 **Ручной режим:** скопируйте сформированный промпт в [Google AI Studio](https://aistudio.google.com/), [ChatGPT](https://chatgpt.com/), [Claude](https://claude.ai/) или [DeepSeek](https://chat.deepseek.com/), а затем вставьте сгенерированный код Typst ниже."))
 
             if jd_input.strip():
                 sys_prompt = get_system_instruction(selected_lang)
@@ -703,33 +737,33 @@ with tab_tailor:
 {jd_input}
 </job_description>
 
---- PHASE 1: GAP ANALYSIS & STRATEGIC CLARIFICATION (НА РУССКОМ ЯЗЫКЕ) ---
+--- PHASE 1: GAP ANALYSIS & STRATEGIC CLARIFICATION ---
 
-Сравни <master_cv> и <job_description>. Выведи СТРОГО следующие два блока на русском языке:
+Compare <master_cv> and <job_description>. Provide STRICTLY these two blocks:
 
-1. **ATS Анализ соответствия ({'на немецком языке' if selected_lang == 'Deutsch' else 'на английском языке'}):**
-   - Оценка совпадения (в % от 0 до 100%).
-   - Совпавшие ключевые слова (навыки, инструменты и процессы из вакансии, которые уже есть в CV).
-   - Критические пробелы, если есть (требования вакансии, которые отсутствуют или слабо выражены).
+1. **ATS Match Analysis ({'in German' if selected_lang == 'Deutsch' else 'in English'}):**
+   - Match Score (% from 0 to 100%).
+   - Matched keywords & skills found in Master CV.
+   - Critical gaps or missing domain requirements.
 
-2. **Уточняющие вопросы (максимум 3 вопроса):**
-   - Вопрос по недостающему софту/инструментам (уточнить, пишем ли "Working knowledge of [Инструмент]" / "Gute Kenntnisse in [Tool]").
-   - Вопрос по адаптации софт-скиллов и формулировок под специфику роли.
-   - Вопрос по тональности (строго корпоративная [Corporate-Safe] или стартап-профиль).
+2. **Strategic Clarification Questions (Maximum 3 questions):**
+   - Missing software/tools (clarify whether to add working knowledge).
+   - Soft-skills framing and domain adjustments.
+   - Tone preference (Corporate-Safe enterprise vs High-Pace Startup).
 
-Заверши Фазу 1 точной фразой:
-"Ответьте на эти вопросы, чтобы я сгенерировал код переменных для tailored.typ."
+End Phase 1 with the exact phrase:
+"Answer these questions to generate the tailored.typ code variables."
 """
-                st.markdown("### 1️⃣ Скопируйте промпт для Фазы 1 (Анализ вакансии & Вопросы)")
-                st.caption("Нажмите иконку копирования в правом верхнем углу блока и вставьте в любую нейросеть:")
+                st.markdown(t("### 1️⃣ Copy Prompt for Phase 1 (Job Gap Analysis & Questions)", "### 1️⃣ Скопируйте промпт для Фазы 1 (Анализ вакансии & Вопросы)"))
+                st.caption(t("Click the copy icon in the top right corner of the box below and paste into any LLM:", "Нажмите иконку копирования в правом верхнем углу блока и вставьте в любую нейросеть:"))
                 st.code(manual_phase_1_prompt, language="markdown")
 
                 st.divider()
-                st.markdown("### 2️⃣ Ответы на вопросы & Промпт для Фазы 2 (Генерация Typst)")
+                st.markdown(t("### 2️⃣ Questions Answers & Phase 2 Prompt (Typst Generation)", "### 2️⃣ Ответы на вопросы & Промпт для Фазы 2 (Генерация Typst)"))
                 manual_answers = st.text_area(
-                    "Ваши ответы на уточняющие вопросы нейросети (необязательно):",
+                    t("Your answers to LLM clarification questions (optional):", "Ваши ответы на уточняющие вопросы нейросети (необязательно):"),
                     height=80,
-                    placeholder="1. Да, подтверждаю знание инструмента X. 2. Опыт подать с упором на надежность. 3. Профиль стартап."
+                    placeholder=t("1. Yes, confirm tool knowledge. 2. Frame experience with focus on reliability. 3. Startup tone.", "1. Да, подтверждаю знание инструмента X. 2. Опыт подать с упором на надежность. 3. Профиль стартап.")
                 )
 
                 summary_placeholder = (
@@ -771,63 +805,63 @@ Generate the exact Typst variable block ready to paste directly into `tailored.t
   {exp_example}
 ]
 """
-                st.caption("Скопируйте этот второй промпт и отправьте его в диалог в вашей нейросети:")
+                st.caption(t("Copy this second prompt and send it to your LLM chat session:", "Скопируйте этот второй промпт и отправьте его в диалог в вашей нейросети:"))
                 st.code(manual_phase_2_prompt, language="markdown")
 
                 st.divider()
-                st.markdown("### 3️⃣ Вставьте код Typst из ответа нейросети и скомпилируйте PDF")
+                st.markdown(t("### 3️⃣ Paste Typst Code from LLM & Compile PDF", "### 3️⃣ Вставьте код Typst из ответа нейросети и скомпилируйте PDF"))
                 pasted_typst_code = st.text_area(
-                    "Вставьте блок кода (`#let target-role = ...`):",
+                    t("Paste Typst code block (`#let target-role = ...`):", "Вставьте блок кода (`#let target-role = ...`):"),
                     height=200,
                     placeholder='#let target-role = "Software Engineer"\n\n#let summary = [\n  ...\n]\n\n#let skills = [\n  ...\n]\n\n#let experience = [\n  ...\n]'
                 )
 
-                if st.button("🚀 Скомпилировать 1-Page PDF из вставленного кода", type="primary"):
+                if st.button(t("🚀 Compile 1-Page PDF from Pasted Code", "🚀 Скомпилировать 1-Page PDF из вставленного кода"), type="primary"):
                     if not pasted_typst_code.strip():
-                        st.warning("⚠️ Вставьте код Typst перед компиляцией.")
+                        st.warning(t("⚠️ Paste Typst code before compiling.", "⚠️ Вставьте код Typst перед компиляцией."))
                     else:
-                        with st.spinner("Компиляция PDF через Typst..."):
+                        with st.spinner(t("Compiling PDF via Typst CLI...", "Компиляция PDF через Typst...")):
                             compile_res, output_pdf_name, output_pdf_path, cleaned_code = compile_typst_pdf(
                                 pasted_typst_code, active_typ_path, selected_lang
                             )
 
                             if compile_res.returncode == 0:
-                                st.success(f"✅ Резюме успешно скомпилировано в 1 страницу ({selected_lang}): `{output_pdf_name}`")
+                                st.success(t(f"✅ 1-Page PDF Resume successfully compiled ({selected_lang}): `{output_pdf_name}`", f"✅ Резюме успешно скомпилировано в 1 страницу ({selected_lang}): `{output_pdf_name}`"))
                                 with open(output_pdf_path, "rb") as pdf_file:
                                     st.download_button(
-                                        label=f"📥 Скачать готовый PDF ({selected_lang})",
+                                        label=t(f"📥 Download 1-Page PDF ({selected_lang})", f"📥 Скачать готовый PDF ({selected_lang})"),
                                         data=pdf_file.read(),
                                         file_name=output_pdf_name,
                                         mime="application/pdf"
                                     )
-                                with st.expander("Посмотреть сохраненный `tailored.typ`"):
+                                with st.expander(t("View saved `tailored.typ`", "Посмотреть сохраненный `tailored.typ`")):
                                     st.code(cleaned_code, language="typst")
                             else:
-                                st.error("Ошибка Typst CLI при компиляции:")
+                                st.error(t("Typst CLI Compilation Error:", "Ошибка Typst CLI при компиляции:"))
                                 st.code(compile_res.stderr)
-                                st.info("💡 Проверьте синтаксис переменных Typst или наличие незакрытых скобок `]` / `}`.")
+                                st.info(t("💡 Verify Typst variable syntax or check for unclosed brackets `]` / `}`.", "💡 Проверьте синтаксис переменных Typst или наличие незакрытых скобок `]` / `}`."))
             else:
-                st.info("Вставьте текст вакансии выше, чтобы сгенерировать готовые промпты.")
+                st.info(t("Paste a job description above to generate tailoring prompts.", "Вставьте текст вакансии выше, чтобы сгенерировать готовые промпты."))
 
 
 # ==============================================================================
 # TAB 3: JOB SCRAPER
 # ==============================================================================
 with tab_scraper:
-    st.subheader("🚀 Запуск сбора вакансий")
-    st.write("Сбор данных из LinkedIn, Indeed, VC Портфолио (Ashby, Greenhouse), Arbeitnow и Berlin Startup Jobs.")
+    st.subheader(t("🚀 Launch Job Scraper", "🚀 Запуск сбора вакансий"))
+    st.write(t("Multi-source scraping from LinkedIn, Indeed, VC Portfolios (Ashby, Greenhouse), Arbeitnow, and Berlin Startup Jobs.", "Сбор данных из LinkedIn, Indeed, VC Портфолио (Ashby, Greenhouse), Arbeitnow и Berlin Startup Jobs."))
 
     s_col1, s_col2 = st.columns(2)
     with s_col1:
-        st.write(f"• Локация: **{config.LOCATION}**")
-        st.write(f"• Глубина поиска: **{config.HOURS_OLD} ч. ({config.HOURS_OLD // 24} дн.)**")
-        st.write(f"• Вакансий на запрос: **{config.RESULTS_PER_QUERY}**")
+        st.write(t(f"• Location: **{config.LOCATION}**", f"• Локация: **{config.LOCATION}**"))
+        st.write(t(f"• Search Depth: **{config.HOURS_OLD} hrs ({config.HOURS_OLD // 24} days)**", f"• Глубина поиска: **{config.HOURS_OLD} ч. ({config.HOURS_OLD // 24} дн.)**"))
+        st.write(t(f"• Postings per Query: **{config.RESULTS_PER_QUERY}**", f"• Вакансий на запрос: **{config.RESULTS_PER_QUERY}**"))
     with s_col2:
-        st.write(f"• Категорий поиска: **{len(config.SEARCH_CATEGORIES)}**")
-        st.write(f"• Исключение языка: **{len(config.ACTIVE_LANGUAGE_PATTERNS)} regex-правил**")
+        st.write(t(f"• Search Categories: **{len(config.SEARCH_CATEGORIES)}**", f"• Категорий поиска: **{len(config.SEARCH_CATEGORIES)}**"))
+        st.write(t(f"• Language Exclusion: **{len(config.ACTIVE_LANGUAGE_PATTERNS)} regex patterns**", f"• Исключение языка: **{len(config.ACTIVE_LANGUAGE_PATTERNS)} regex-правил**"))
 
-    if st.button("▶️ Запустить полный цикл сбора", type="primary"):
-        st.write("🚀 **Запуск скрейпера в реальном времени...**")
+    if st.button(t("▶️ Run Full Scraping Cycle", "▶️ Запустить полный цикл сбора"), type="primary"):
+        st.write(t("🚀 **Launching scraper in real-time...**", "🚀 **Запуск скрейпера в реальном времени...**"))
         log_box = st.empty()
         logs = []
         
@@ -858,33 +892,51 @@ with tab_scraper:
         returncode = proc.wait()
         
         if returncode == 0:
-            st.success("🎉 Сбор успешно завершен! Свежий файл сохранен. Перейдите на вкладку '📋 1. Лента вакансий' для просмотра.")
+            st.success(t("🎉 Scraping complete! Fresh dataset saved. Head over to '📋 1. Job Feed & Tracker' tab to view.", "🎉 Сбор успешно завершен! Свежий файл сохранен. Перейдите на вкладку '📋 1. Лента вакансий' для просмотра."))
         else:
-            st.error("❌ Сбой при сборе вакансий. Ознакомьтесь с логом ниже.")
+            st.error(t("❌ Scraping encountered an error. Check terminal logs below.", "❌ Сбой при сборе вакансий. Ознакомьтесь с логом ниже."))
 
-        with st.expander("📜 Посмотреть полный лог выполнения (можно скопировать весь текст целиком)", expanded=False):
-            st.text_area("Полный лог терминала:", value="".join(logs), height=350)
+        with st.expander(t("📜 View Full Terminal Log", "📜 Посмотреть полный лог выполнения (можно скопировать весь текст целиком)"), expanded=False):
+            st.text_area(t("Terminal Output:", "Полный лог терминала:"), value="".join(logs), height=350)
 
 
 # ==============================================================================
 # TAB 4: GUIDE & SETTINGS
 # ==============================================================================
 with tab_guide:
-    st.subheader("📖 Руководство пользователя и Настройки")
+    st.subheader(t("📖 User Guide & Architecture", "📖 Руководство пользователя и Настройки"))
     
-    st.markdown("""
-    ### 🔄 Рабочий процесс полного цикла (Workflow):
-    1. **Сбор вакансий:** Запустите `main.py` (или нажмите кнопку во вкладке 3).
-    2. **Отбор и проверка:** Во вкладке **«Лента вакансий»** открывайте ссылки в 1 клик. Если вакансия не подходит — жмите 🟡 `Пропуск` (она больше не появится).
-    3. **Генерация резюме (EN или DE):**
-       - Нажмите 🇬🇧 `CV (EN)` или 🇩🇪 `CV (DE)` прямо в карточке вакансии.
-       - Ответьте на 3 уточняющих вопроса в Фазе 1.
-       - Скачайте идеальный 1-страничный PDF на нужном языке.
-    
-    ---
-    ### 📂 Структура файлов резюме:
-    - **`Master_CV.md` / `Master_CV_DE.md`** — Банк опыта (на английском и немецком языках).
-    - **`main.typ` / `main_de.typ`** — Скелеты резюме Typst с заголовками и статичными блоками.
-    - **`tailored.typ`** — Динамический файл, куда AI записывает адаптированные под вакансию summary, skills и bullet points.
-    - **`templates/`** — Обезличенные шаблоны для новых пользователей на GitHub.
-    """)
+    if is_en:
+        st.markdown("""
+        ### 🔄 End-to-End Career Workflow:
+        1. **Job Scraping:** Run `main.py` or trigger the scraper from Tab 3.
+        2. **Feed Review & Filtering:** In the **Job Feed** tab, open links with 1 click. If a role is irrelevant, click 🟡 `Skip` (it will never appear again).
+        3. **1-Click Resume Tailoring (EN or DE):**
+           - Click 🇬🇧 `CV (EN)` or 🇩🇪 `CV (DE)` directly on any job card.
+           - Answer 3 quick strategic questions in Phase 1.
+           - Download the pixel-perfect 1-page PDF compiled via Typst.
+        
+        ---
+        ### 📂 Resume Asset Structure:
+        - **`Master_CV.md` / `Master_CV_DE.md`** — Comprehensive Experience Banks (English and German).
+        - **`main.typ` / `main_de.typ`** — Canonical Typst resume skeletons with contact headers and static sections.
+        - **`tailored.typ`** — Dynamic file where AI writes tailored summary, skills, and experience bullet points.
+        - **`templates/`** — Anonymized open-source templates for GitHub community.
+        """)
+    else:
+        st.markdown("""
+        ### 🔄 Рабочий процесс полного цикла (Workflow):
+        1. **Сбор вакансий:** Запустите `main.py` (или нажмите кнопку во вкладке 3).
+        2. **Отбор и проверка:** Во вкладке **«Лента вакансий»** открывайте ссылки в 1 клик. Если вакансия не подходит — жмите 🟡 `Пропуск` (она больше не появится).
+        3. **Генерация резюме (EN или DE):**
+           - Нажмите 🇬🇧 `CV (EN)` или 🇩🇪 `CV (DE)` прямо в карточке вакансии.
+           - Ответьте на 3 уточняющих вопроса в Фазе 1.
+           - Скачайте идеальный 1-страничный PDF на нужном языке.
+        
+        ---
+        ### 📂 Структура файлов резюме:
+        - **`Master_CV.md` / `Master_CV_DE.md`** — Банк опыта (на английском и немецком языках).
+        - **`main.typ` / `main_de.typ`** — Скелеты резюме Typst с заголовками и статичными блоками.
+        - **`tailored.typ`** — Динамический файл, куда AI записывает адаптированные под вакансию summary, skills и bullet points.
+        - **`templates/`** — Обезличенные шаблоны для новых пользователей на GitHub.
+        """)
