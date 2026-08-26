@@ -141,50 +141,108 @@ def load_all_historical_reviewed_keys():
     return marked_urls, marked_title_company
 
 
-def fetch_single_linkedin_desc(url):
-    """Fetch full 'About the job' text for a single LinkedIn listing."""
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
+]
+
+
+def fetch_single_linkedin_desc(url, max_retries=3):
+    """Fetch full 'About the job' text for a LinkedIn listing using guest endpoint with backoff."""
     if not url or pd.isna(url):
         return ""
-    try:
-        res = requests.get(url, headers=config.REQUEST_HEADERS, timeout=8)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.text, 'html.parser')
-            desc_div = soup.find('div', class_='show-more-less-html__markup') or soup.find('section', class_='description')
-            if desc_div:
-                return desc_div.get_text(separator='\n', strip=True)
-    except Exception:
-        pass
+    
+    job_id_match = re.search(r'/view/(\d+)', str(url)) or re.search(r'(\d{7,})', str(url))
+    
+    target_urls = []
+    if job_id_match:
+        jid = job_id_match.group(1)
+        target_urls.append(f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{jid}")
+    target_urls.append(str(url))
+
+    for target_url in target_urls:
+        for attempt in range(max_retries):
+            try:
+                headers = {
+                    'User-Agent': random.choice(USER_AGENTS),
+                    'Accept-Language': 'en-US,en;q=0.9,de;q=0.8',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                }
+                res = requests.get(target_url, headers=headers, timeout=10)
+                if res.status_code == 200 and res.text:
+                    soup = BeautifulSoup(res.text, 'html.parser')
+                    desc_div = (
+                        soup.find('div', class_='show-more-less-html__markup') or 
+                        soup.find('section', class_='description') or
+                        soup.find('div', class_='description__text') or
+                        soup.find(class_=lambda c: c and 'description' in str(c))
+                    )
+                    if desc_div:
+                        desc_text = desc_div.get_text(separator='\n', strip=True)
+                        if len(desc_text) > 80:
+                            return desc_text
+                elif res.status_code in [429, 503]:
+                    backoff = random.uniform(1.5, 3.0) * (attempt + 1)
+                    time.sleep(backoff)
+                    continue
+            except Exception:
+                time.sleep(1.0)
     return ""
 
 
 def enrich_descriptions_multithreaded(df):
-    """Fast concurrent enrichment of LinkedIn descriptions via ThreadPoolExecutor."""
+    """Paced, polite enrichment of LinkedIn descriptions with retry passes and micro-delays."""
     df['description'] = df['description'].fillna('')
     df['site'] = df['site'].fillna('')
     
-    mask = (df['site'].str.lower() == 'linkedin') & (df['description'].str.len() < 500)
+    mask = (df['site'].str.lower() == 'linkedin') & (df['description'].str.len() < 100)
     linkedin_indices = list(df[mask].index)
     
     if not linkedin_indices:
         return df
 
-    print(f"\n🔄 [FAST-ENRICH] Concurrently fetching {len(linkedin_indices)} LinkedIn descriptions (5 threads)...", flush=True)
+    print(f"\n🔄 [PACED-ENRICH] Concurrently fetching {len(linkedin_indices)} LinkedIn descriptions with smart rate-limiting...", flush=True)
     
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        future_to_idx = {executor.submit(fetch_single_linkedin_desc, df.at[i, 'job_url']): i for i in linkedin_indices}
+    # Pass 1: Controlled concurrency (3 workers) with micro-delays
+    def worker_fetch(idx):
+        time.sleep(random.uniform(0.2, 0.5))
+        return idx, fetch_single_linkedin_desc(df.at[idx, 'job_url'])
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(worker_fetch, i) for i in linkedin_indices]
         completed_count = 0
-        for future in as_completed(future_to_idx):
-            i = future_to_idx[future]
+        success_count = 0
+        for future in as_completed(futures):
             try:
-                desc = future.result()
+                i, desc = future.result()
                 if desc:
                     df.at[i, 'description'] = desc
+                    success_count += 1
             except Exception:
                 pass
             completed_count += 1
-            if completed_count % 10 == 0 or completed_count == len(linkedin_indices):
-                print(f"   • Enriched {completed_count}/{len(linkedin_indices)} listings...", flush=True)
-                
+            if completed_count % 25 == 0 or completed_count == len(linkedin_indices):
+                print(f"   • Pass 1: Progress {completed_count}/{len(linkedin_indices)} (Filled: {success_count})...", flush=True)
+
+    # Pass 2: Retry remaining empty descriptions with spacing
+    rem_mask = (df['site'].str.lower() == 'linkedin') & (df['description'].str.len() < 100)
+    rem_indices = list(df[rem_mask].index)
+    if rem_indices:
+        print(f"   • Pass 2: Retrying {len(rem_indices)} uncollected descriptions with gentle spacing...", flush=True)
+        time.sleep(2.0)
+        for count, idx in enumerate(rem_indices, 1):
+            time.sleep(random.uniform(0.5, 1.0))
+            desc = fetch_single_linkedin_desc(df.at[idx, 'job_url'], max_retries=2)
+            if desc:
+                df.at[idx, 'description'] = desc
+                success_count += 1
+            if count % 15 == 0 or count == len(rem_indices):
+                print(f"     -> Retried {count}/{len(rem_indices)}...", flush=True)
+
+    print(f"  ✓ Description enrichment complete: {success_count}/{len(linkedin_indices)} filled.", flush=True)
     return df
 
 
