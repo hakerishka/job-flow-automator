@@ -142,11 +142,11 @@ def is_scraper_running():
 # --- SIDEBAR: SETTINGS & MODEL SELECTION ---
 st.sidebar.title("🎯 Job-Flow Control")
 
-# Language Switcher
+# Language Switcher (Defaults to Russian for local convenience, toggleable anytime)
 ui_lang_choice = st.sidebar.radio(
     "🌐 Language / Язык интерфейса:",
-    ["🇬🇧 English", "🇷🇺 Русский"],
-    index=0 if st.session_state.get('ui_lang', 'en') == 'en' else 1,
+    ["🇷🇺 Русский", "🇬🇧 English"],
+    index=0 if st.session_state.get('ui_lang', 'ru') == 'ru' else 1,
     horizontal=True
 )
 is_en = "English" in ui_lang_choice
@@ -234,18 +234,25 @@ client = get_client(api_key_input)
 
 
 def get_system_instruction(target_lang="English"):
-    """Dynamically generate system prompt based on selected resume language."""
+    """Dynamically generate system prompt based on selected resume language and UI language."""
     cv_path = MASTER_CV_DE if target_lang == "Deutsch" and MASTER_CV_DE.exists() else MASTER_CV_EN
     cv_content = ""
     if cv_path.exists():
         with open(cv_path, "r", encoding="utf-8") as f:
             cv_content = f.read()
 
-    lang_rule = (
-        "Execute Phase 1 strictly in RUSSIAN (if user speaks Russian) or ENGLISH. Execute Phase 2 strictly in GERMAN (valid Typst code, high-density professional German ATS terminology, e.g. '01/2023 – Heute', 'Freiberuflich / Selbstständig')."
-        if target_lang == "Deutsch"
-        else "Execute Phase 1 in the user's primary language. Execute Phase 2 strictly in ENGLISH (valid Typst code)."
-    )
+    if not is_en:
+        lang_rule = (
+            "Execute Phase 1 strictly in RUSSIAN. Execute Phase 2 strictly in GERMAN (valid Typst code, high-density professional German ATS terminology, e.g. '01/2023 – Heute', 'Freiberuflich / Selbstständig')."
+            if target_lang == "Deutsch"
+            else "Execute Phase 1 strictly in RUSSIAN. Execute Phase 2 strictly in ENGLISH (valid Typst code)."
+        )
+    else:
+        lang_rule = (
+            "Execute Phase 1 strictly in ENGLISH. Execute Phase 2 strictly in GERMAN (valid Typst code, high-density professional German ATS terminology, e.g. '01/2023 – Heute', 'Freiberuflich / Selbstständig')."
+            if target_lang == "Deutsch"
+            else "Execute Phase 1 strictly in ENGLISH. Execute Phase 2 strictly in ENGLISH (valid Typst code)."
+        )
 
     return f"""
 <role>
@@ -264,6 +271,103 @@ You are an expert ATS Optimization Architect and Lead Technical Recruiter specia
 <master_cv>
 {cv_content}
 </master_cv>
+"""
+
+
+def get_phase_1_prompt(jd_input: str, target_lang: str) -> str:
+    """Generate Phase 1 prompt in Russian or English depending on UI language."""
+    if not is_en:
+        return f"""
+<job_description>
+{jd_input}
+</job_description>
+
+--- PHASE 1: GAP ANALYSIS & STRATEGIC CLARIFICATION (НА РУССКОМ ЯЗЫКЕ) ---
+
+Сравни <master_cv> и <job_description>. Выведи СТРОГО следующие два блока на русском языке:
+
+1. **ATS Анализ соответствия ({'на немецком языке' if target_lang == 'Deutsch' else 'на английском языке'}):**
+   - Оценка совпадения (в % от 0 до 100%).
+   - Совпавшие ключевые слова (навыки, инструменты и процессы из вакансии, которые уже есть в CV).
+   - Критические пробелы, если есть (требования вакансии, которые отсутствуют или слабо выражены).
+
+2. **Уточняющие вопросы (максимум 3 вопроса):**
+   - Вопрос по недостающему софту/инструментам (уточнить, пишем ли "Working knowledge of [Инструмент]" / "Gute Kenntnisse in [Tool]").
+   - Вопрос по адаптации софт-скиллов и формулировок под специфику роли.
+   - Вопрос по тональности (строго корпоративная [Corporate-Safe] или стартап-профиль).
+
+Заверши Фазу 1 точной фразой:
+"Ответьте на эти вопросы, чтобы я сгенерировал код переменных для tailored.typ."
+"""
+    else:
+        return f"""
+<job_description>
+{jd_input}
+</job_description>
+
+--- PHASE 1: GAP ANALYSIS & STRATEGIC CLARIFICATION (IN ENGLISH) ---
+
+Compare <master_cv> and <job_description>. Provide STRICTLY these two blocks in English:
+
+1. **ATS Match Analysis ({'in German' if target_lang == 'Deutsch' else 'in English'}):**
+   - Match Score (% from 0 to 100%).
+   - Matched keywords & skills found in Master CV.
+   - Critical gaps or missing domain requirements.
+
+2. **Strategic Clarification Questions (Maximum 3 questions):**
+   - Missing software/tools (clarify whether to add working knowledge).
+   - Soft-skills framing and domain adjustments.
+   - Tone preference (Corporate-Safe enterprise vs High-Pace Startup).
+
+End Phase 1 with the exact phrase:
+"Answer these questions to generate the tailored.typ code variables."
+"""
+
+
+def get_phase_2_prompt(user_answers: str, target_role: str, target_lang: str) -> str:
+    """Generate Phase 2 prompt for Typst code generation."""
+    summary_placeholder = (
+        "ZUSAMMENFASSUNG_PROFIL (maximal 3-4 Zeilen, hohe Dichte relevanter deutscher ATS-Schlüsselwörter, nur ASCII-Bindestriche)."
+        if target_lang == "Deutsch"
+        else "SUMMARY_PARAGRAPH (3-4 lines maximum, high keyword density, standard ASCII hyphens only)."
+    )
+
+    skills_header = (
+        "- *Kernkompetenzen & Systeme:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Plattformen:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Methoden & Standards:* Method 1, Method 2, Method 3"
+        if target_lang == "Deutsch"
+        else "- *Core Technical & Systems:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Platforms:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Operational Methodologies:* Method 1, Method 2, Method 3"
+    )
+
+    exp_example = (
+        "*Positionsbezeichnung 1* — _Unternehmen 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[01/2023 – Heute · Berlin / Remote]\n  - Stichpunkt 1 (Aktionsverb + Kontext + Messbares Ergebnis)\n  - Stichpunkt 2\n  - Stichpunkt 3\n\n  #v(0.25em)\n  *Positionsbezeichnung 2* — _Unternehmen 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[09/2017 – 01/2023 · Standort]\n  - Stichpunkt 1\n  - Stichpunkt 2\n  - Stichpunkt 3"
+        if target_lang == "Deutsch"
+        else "*Role Title 1* — _Company 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Jan 2023 – Present · Berlin / Remote]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3\n\n  #v(0.25em)\n  *Role Title 2* — _Company 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Sep 2017 – Jan 2023 · Location]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3"
+    )
+
+    default_answers = "Proceed with standard optimal mappings based on Master CV." if is_en else "Использовать стандартные оптимальные формулировки на основе Master CV."
+    role_val = target_role if target_role else ("EXACT_JOB_TITLE_FROM_JD" if is_en else "НАЗВАНИЕ_ВАКАНСИИ")
+
+    return f"""
+User Answers:
+{user_answers if user_answers.strip() else default_answers}
+
+--- PHASE 2: TYPST VARIABLE GENERATION ({'IN GERMAN' if target_lang == 'Deutsch' else 'IN ENGLISH'}) ---
+
+Generate the exact Typst variable block ready to paste directly into `tailored.typ`:
+
+#let target-role = "{role_val}"
+
+#let summary = [
+  {summary_placeholder}
+]
+
+#let skills = [
+  {skills_header}
+]
+
+#let experience = [
+  {exp_example}
+]
 """
 
 
@@ -289,7 +393,7 @@ def send_message_with_retry(chat_session, prompt_text, max_retries=3):
 def compile_typst_pdf(raw_code: str, active_typ_path: Path, selected_lang: str):
     """Clean Typst variable declarations, save to tailored.typ, and compile to PDF."""
     cleaned_code = re.sub(r"^```typst\s*|^```\s*|```$", "", raw_code.strip(), flags=re.MULTILINE)
-    cleaned_code = cleaned_code.replace("‑", "-").replace("–", "-").replace("—", "—")
+    cleaned_code = cleaned_code.replace("\u2011", "-").replace("\u2013", "-").replace("\u2014", "—")
     cleaned_code = cleaned_code.replace(" | ", " · ")
 
     # Write to tailored.typ
@@ -603,28 +707,7 @@ with tab_tailor:
                             )
                         )
 
-                        phase_1_prompt = f"""
-                        <job_description>
-                        {jd_input}
-                        </job_description>
-
-                        --- PHASE 1: GAP ANALYSIS & STRATEGIC CLARIFICATION ---
-
-                        Compare <master_cv> and <job_description>. Provide STRICTLY these two blocks:
-
-                        1. **ATS Match Analysis ({'in German' if selected_lang == 'Deutsch' else 'in English'}):**
-                           - Match Score (% from 0 to 100%).
-                           - Matched keywords & skills found in Master CV.
-                           - Critical gaps or missing domain requirements.
-
-                        2. **Strategic Clarification Questions (Maximum 3 questions):**
-                           - Missing software/tools (clarify whether to add working knowledge).
-                           - Soft-skills framing and domain adjustments.
-                           - Tone preference (Corporate-Safe enterprise vs High-Pace Startup).
-
-                        End Phase 1 with the exact phrase:
-                        "Answer these questions to generate the tailored.typ code variables."
-                        """
+                        phase_1_prompt = get_phase_1_prompt(jd_input, selected_lang)
                         response = send_message_with_retry(st.session_state.chat, phase_1_prompt)
                         st.session_state.phase_1_response = response.text
                     except Exception as e:
@@ -644,46 +727,7 @@ with tab_tailor:
                 if st.button(t("🚀 Generate & Compile 1-Page PDF", "🚀 Сгенерировать и скомпилировать 1-Page PDF"), type="primary"):
                     with st.spinner(t("Generating Typst variables & compiling PDF...", "Генерация Typst переменных и компиляция PDF...")):
                         try:
-                            summary_placeholder = (
-                                "ZUSAMMENFASSUNG_PROFIL (maximal 3-4 Zeilen, hohe Dichte relevanter deutscher ATS-Schlüsselwörter, nur ASCII-Bindestriche)."
-                                if selected_lang == "Deutsch"
-                                else "SUMMARY_PARAGRAPH (3-4 lines maximum, high keyword density, standard ASCII hyphens only)."
-                            )
-
-                            skills_header = (
-                                "- *Kernkompetenzen & Systeme:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Plattformen:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Methoden & Standards:* Method 1, Method 2, Method 3"
-                                if selected_lang == "Deutsch"
-                                else "- *Core Technical & Systems:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Platforms:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Operational Methodologies:* Method 1, Method 2, Method 3"
-                            )
-
-                            exp_example = (
-                                "*Positionsbezeichnung 1* — _Unternehmen 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[01/2023 – Heute · Berlin / Remote]\n  - Stichpunkt 1 (Aktionsverb + Kontext + Messbares Ergebnis)\n  - Stichpunkt 2\n  - Stichpunkt 3\n\n  #v(0.25em)\n  *Positionsbezeichnung 2* — _Unternehmen 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[09/2017 – 01/2023 · Standort]\n  - Stichpunkt 1\n  - Stichpunkt 2\n  - Stichpunkt 3"
-                                if selected_lang == "Deutsch"
-                                else "*Role Title 1* — _Company 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Jan 2023 – Present · Berlin / Remote]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3\n\n  #v(0.25em)\n  *Role Title 2* — _Company 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Sep 2017 – Jan 2023 · Location]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3"
-                            )
-
-                            phase_2_prompt = f"""
-                            User Answers:
-                            {user_answers if user_answers.strip() else "Proceed with standard optimal mappings based on Master CV."}
-
-                            --- PHASE 2: TYPST VARIABLE GENERATION ({'IN GERMAN' if selected_lang == 'Deutsch' else 'IN ENGLISH'}) ---
-
-                            Generate the exact Typst variable block ready to paste directly into `tailored.typ`:
-
-                            #let target-role = "{st.session_state.target_role if st.session_state.target_role else 'EXACT_JOB_TITLE_FROM_JD'}"
-
-                            #let summary = [
-                              {summary_placeholder}
-                            ]
-
-                            #let skills = [
-                              {skills_header}
-                            ]
-
-                            #let experience = [
-                              {exp_example}
-                            ]
-                            """
+                            phase_2_prompt = get_phase_2_prompt(user_answers, st.session_state.target_role, selected_lang)
 
                             if st.session_state.chat is None:
                                 sys_inst = get_system_instruction(selected_lang)
@@ -731,29 +775,8 @@ with tab_tailor:
 
             if jd_input.strip():
                 sys_prompt = get_system_instruction(selected_lang)
-                manual_phase_1_prompt = f"""{sys_prompt}
-
-<job_description>
-{jd_input}
-</job_description>
-
---- PHASE 1: GAP ANALYSIS & STRATEGIC CLARIFICATION ---
-
-Compare <master_cv> and <job_description>. Provide STRICTLY these two blocks:
-
-1. **ATS Match Analysis ({'in German' if selected_lang == 'Deutsch' else 'in English'}):**
-   - Match Score (% from 0 to 100%).
-   - Matched keywords & skills found in Master CV.
-   - Critical gaps or missing domain requirements.
-
-2. **Strategic Clarification Questions (Maximum 3 questions):**
-   - Missing software/tools (clarify whether to add working knowledge).
-   - Soft-skills framing and domain adjustments.
-   - Tone preference (Corporate-Safe enterprise vs High-Pace Startup).
-
-End Phase 1 with the exact phrase:
-"Answer these questions to generate the tailored.typ code variables."
-"""
+                manual_phase_1_prompt = f"""{sys_prompt}\n{get_phase_1_prompt(jd_input, selected_lang)}"""
+                
                 st.markdown(t("### 1️⃣ Copy Prompt for Phase 1 (Job Gap Analysis & Questions)", "### 1️⃣ Скопируйте промпт для Фазы 1 (Анализ вакансии & Вопросы)"))
                 st.caption(t("Click the copy icon in the top right corner of the box below and paste into any LLM:", "Нажмите иконку копирования в правом верхнем углу блока и вставьте в любую нейросеть:"))
                 st.code(manual_phase_1_prompt, language="markdown")
@@ -766,45 +789,7 @@ End Phase 1 with the exact phrase:
                     placeholder=t("1. Yes, confirm tool knowledge. 2. Frame experience with focus on reliability. 3. Startup tone.", "1. Да, подтверждаю знание инструмента X. 2. Опыт подать с упором на надежность. 3. Профиль стартап.")
                 )
 
-                summary_placeholder = (
-                    "ZUSAMMENFASSUNG_PROFIL (maximal 3-4 Zeilen, hohe Dichte relevanter deutscher ATS-Schlüsselwörter, nur ASCII-Bindestriche)."
-                    if selected_lang == "Deutsch"
-                    else "SUMMARY_PARAGRAPH (3-4 lines maximum, high keyword density, standard ASCII hyphens only)."
-                )
-
-                skills_header = (
-                    "- *Kernkompetenzen & Systeme:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Plattformen:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Methoden & Standards:* Method 1, Method 2, Method 3"
-                    if selected_lang == "Deutsch"
-                    else "- *Core Technical & Systems:* Keyword 1, Keyword 2, Keyword 3, Keyword 4\n  - *Tools & Platforms:* Tool 1, Tool 2, Tool 3, Tool 4\n  - *Operational Methodologies:* Method 1, Method 2, Method 3"
-                )
-
-                exp_example = (
-                    "*Positionsbezeichnung 1* — _Unternehmen 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[01/2023 – Heute · Berlin / Remote]\n  - Stichpunkt 1 (Aktionsverb + Kontext + Messbares Ergebnis)\n  - Stichpunkt 2\n  - Stichpunkt 3\n\n  #v(0.25em)\n  *Positionsbezeichnung 2* — _Unternehmen 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[09/2017 – 01/2023 · Standort]\n  - Stichpunkt 1\n  - Stichpunkt 2\n  - Stichpunkt 3"
-                    if selected_lang == "Deutsch"
-                    else "*Role Title 1* — _Company 1_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Jan 2023 – Present · Berlin / Remote]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3\n\n  #v(0.25em)\n  *Role Title 2* — _Company 2_ #h(1fr) #text(fill: rgb(\"#444444\"), size: 8.5pt)[Sep 2017 – Jan 2023 · Location]\n  - Bullet point 1\n  - Bullet point 2\n  - Bullet point 3"
-                )
-
-                manual_phase_2_prompt = f"""User Answers:
-{manual_answers if manual_answers.strip() else "Proceed with standard optimal mappings based on Master CV."}
-
---- PHASE 2: TYPST VARIABLE GENERATION ({'IN GERMAN' if selected_lang == 'Deutsch' else 'IN ENGLISH'}) ---
-
-Generate the exact Typst variable block ready to paste directly into `tailored.typ`:
-
-#let target-role = "{st.session_state.target_role if st.session_state.target_role else 'EXACT_JOB_TITLE_FROM_JD'}"
-
-#let summary = [
-  {summary_placeholder}
-]
-
-#let skills = [
-  {skills_header}
-]
-
-#let experience = [
-  {exp_example}
-]
-"""
+                manual_phase_2_prompt = get_phase_2_prompt(manual_answers, st.session_state.target_role, selected_lang)
                 st.caption(t("Copy this second prompt and send it to your LLM chat session:", "Скопируйте этот второй промпт и отправьте его в диалог в вашей нейросети:"))
                 st.code(manual_phase_2_prompt, language="markdown")
 
